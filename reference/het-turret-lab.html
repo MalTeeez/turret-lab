@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HET Turret Lab — DPS per slot</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root{
+  --void:#0a0e14; --panel:#121821; --panel2:#182029; --line:#243040;
+  --ink:#d8e2ec; --dim:#7e8fa2;
+  --hull:#ff8a3d; --shield:#4fc3f7; --hot:#ff4d5e;
+  --r:2px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--void);color:var(--ink);
+  font-family:'IBM Plex Mono',monospace;font-size:13px;line-height:1.5}
+header{border-bottom:1px solid var(--line);padding:18px 22px;
+  display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;background:var(--panel)}
+h1{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:19px;margin:0;
+  letter-spacing:.14em;text-transform:uppercase}
+h1 span{color:var(--hull)}
+.sub{color:var(--dim);font-size:11.5px;letter-spacing:.04em}
+.wrap{padding:20px 22px 40px;max-width:1560px;margin:0 auto}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+  gap:16px;background:var(--panel);border:1px solid var(--line);padding:16px 18px;margin-bottom:6px}
+.ctl label{display:block;font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--dim);margin-bottom:7px}
+.val{color:var(--hull);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--hull);background:transparent;margin:2px 0}
+select{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+  padding:7px 9px;font-family:inherit;font-size:12.5px;border-radius:var(--r)}
+select:focus,input:focus,button:focus{outline:2px solid var(--hull);outline-offset:1px}
+.readout{display:flex;gap:22px;flex-wrap:wrap;padding:10px 18px;background:var(--panel2);
+  border:1px solid var(--line);border-top:none;margin-bottom:20px;font-size:11.5px}
+.readout b{color:var(--ink);font-weight:600}
+.readout i{color:var(--dim);font-style:normal}
+.charts{display:grid;grid-template-columns:1fr;gap:22px}
+@media(min-width:1180px){.charts{grid-template-columns:1fr 1fr}}
+.card{background:var(--panel);border:1px solid var(--line);padding:14px 16px 16px}
+.card h2{font-family:'Chakra Petch',sans-serif;font-size:13px;letter-spacing:.16em;
+  text-transform:uppercase;margin:0 0 2px}
+.card .note{color:var(--dim);font-size:11px;margin-bottom:12px}
+.hullc h2{color:var(--hull)} .shieldc h2{color:var(--shield)}
+.cbox{position:relative;height:430px}
+.legend{display:flex;flex-wrap:wrap;gap:5px 8px;margin-top:12px}
+.chip{display:flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 6px;
+  border:1px solid var(--line);cursor:pointer;user-select:none;color:var(--dim);border-radius:var(--r)}
+.chip.on{color:var(--ink);border-color:currentColor}
+.chip.off{opacity:.35;text-decoration:line-through}
+.sw{width:9px;height:9px;flex:none;border-radius:1px}
+table{width:100%;border-collapse:collapse;margin-top:22px;font-size:12px}
+th,td{padding:6px 9px;text-align:right;border-bottom:1px solid var(--line)}
+th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+  text-align:right;cursor:pointer;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th.sorted{color:var(--hull)}
+tbody tr:hover{background:var(--panel2)}
+.tag{font-size:9.5px;padding:1px 5px;border:1px solid var(--line);color:var(--dim);margin-left:6px;border-radius:var(--r)}
+.tag.def{color:#ffd54f;border-color:#5c5330}
+.tag.una{color:#26a69a;border-color:#1d4c48}
+footer{color:var(--dim);font-size:11px;margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
+footer code{color:var(--ink);background:var(--panel2);padding:1px 4px}
+.btn{background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+  font-family:inherit;font-size:10.5px;padding:5px 9px;cursor:pointer;letter-spacing:.08em;
+  text-transform:uppercase;border-radius:var(--r)}
+.btn:hover{color:var(--ink);border-color:var(--hull)}
+.row{display:flex;gap:8px;align-items:flex-end}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>HET Turret <span>Lab</span></h1>
+  <div class="sub">effective DPS per slot &middot; verified against mod + vanilla Lua (all barrel assemblies counted) &middot; max turret-factory investment</div>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="ctl">
+      <label>Tech level <span class="val" id="techV">36</span> <span id="distV" class="sub"></span></label>
+      <input type="range" id="tech" min="0" max="52" step="1" value="36">
+    </div>
+    <div class="ctl">
+      <label>Rarity</label>
+      <select id="rarity">
+        <option value="-1">Petty</option><option value="0">Common</option>
+        <option value="1">Uncommon</option><option value="2">Rare</option>
+        <option value="3">Exceptional</option><option value="4">Exotic</option>
+        <option value="5" selected>Legendary</option>
+      </select>
+    </div>
+    <div class="ctl">
+      <label>Material</label>
+      <select id="mat">
+        <option value="0">Iron</option><option value="1">Titanium</option>
+        <option value="2">Naonite</option><option value="3">Trinium</option>
+        <option value="4" selected>Xanion</option><option value="5">Ogonite</option>
+        <option value="6">Avorion</option>
+      </select>
+    </div>
+    <div class="ctl">
+      <label>Difficulty</label>
+      <select id="diff">
+        <option value="0.2">Beginner &times;0.2</option><option value="0.4">Easy &times;0.4</option>
+        <option value="0.6" selected>Normal &times;0.6</option><option value="0.8">Veteran &times;0.8</option>
+        <option value="1.0">Expert &times;1.0</option><option value="2.0">Hardcore &times;2.0</option>
+        <option value="4.0">Insane &times;4.0</option>
+      </select>
+    </div>
+    <div class="ctl">
+      <label>Hit model</label>
+      <select id="hitm">
+        <option value="1" selected>Penalise flight time</option>
+        <option value="0">Stationary target (no penalty)</option>
+      </select>
+    </div>
+    <div class="ctl">
+      <label>Table figures</label>
+      <select id="metric">
+        <option value="slot" selected>Per slot (total in parens)</option>
+        <option value="total">Turret total (per slot in parens)</option>
+      </select>
+    </div>
+    <div class="ctl">
+      <label>Specialty roll</label>
+      <div class="row">
+        <select id="spec">
+          <option value="1" selected>HighRange where possible</option>
+          <option value="0">No specialty</option>
+        </select>
+        <button class="btn" id="matSync" title="Set material to the belt that matches this tech level">Sync&nbsp;mat</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="readout">
+    <span><i>sector DPS budget</i> <b id="oBudget">—</b></span>
+    <span><i>distance from core</i> <b id="oDist">—</b></span>
+    <span><i>rarity damage factor</i> <b id="oAdapt">—</b></span>
+    <span><i>HighRange reach</i> <b id="oHR">—</b></span>
+    <span><i>belt material here</i> <b id="oBelt">—</b></span>
+    <span><i>sector ship volume</i> <b id="oVol">—</b></span>
+  </div>
+
+  <div class="charts">
+    <div class="card hullc">
+      <h2>Against hull</h2>
+      <div class="note">Full hull output once shields are down, all barrels counted. Weapons tagged <b>pierce</b> land that share of this damage on hull even while shields are still up. Hull damage is never reduced by enemy resistances — those live on the shield.</div>
+      <div class="cbox"><canvas id="hullChart"></canvas></div>
+      <div class="legend" id="legendHull"></div>
+    </div>
+    <div class="card shieldc">
+      <h2>Against shields</h2>
+      <div class="note">Weapons with a shield multiplier of zero are absent here — Flamethrower, Salvaging Laser and both Hammer Heads cannot damage shields at all. Only Physical, Plasma, Electric and AntiMatter can be resisted; Energy and Fragments always land in full.</div>
+      <div class="cbox"><canvas id="shieldChart"></canvas></div>
+      <div class="legend" id="legendShield"></div>
+    </div>
+  </div>
+
+
+
+  <div class="card" id="optCard" style="margin-top:22px">
+    <h2 style="color:#c774e8">Loadout solver</h2>
+    <div class="note">Picks integer turret counts for an <b>armed</b>-slot budget — Unarmed (Salvaging, Mining, Hammer Heads) and Defense (A.D.S.T., Anti-Fighter, Torpedo) turrets mount on their own slot pools and never compete here; stack salvagers on top of any solution for free hull DPS. Objective blends time-to-kill across a range band with the worst case if the target's <b>shield</b> resists one damage type at 95% (hull damage is never resisted, and Energy / Fragments weapons can't be resisted at all). Reserve a fixed count of any armed turret to guarantee it survives the solve — useful for keeping knife-range Flamethrowers the range band would otherwise cut.</div>
+    <div class="controls" style="margin-bottom:14px">
+      <div class="ctl"><label>Armed slot budget <span class="val" id="budV">30</span></label>
+        <input type="range" id="slotBudget" min="4" max="200" step="1" value="30"></div>
+      <div class="ctl"><label>Engagement band</label>
+        <select id="band">
+          <option value="0.5,1.5,3">Brawl 0.5–3 km</option>
+          <option value="3,7,12" selected>Mid 3–12 km</option>
+          <option value="8,14,21">Long 8–21 km</option>
+          <option value="0.5,3,8,14,21">Everything 0.5–21 km</option>
+        </select></div>
+      <div class="ctl"><label>Target</label>
+        <select id="profile">
+          <option value="fighter">Fighter / drone (0.15× sector ship)</option>
+          <option value="ship" selected>Sector ship (derived from volume)</option>
+          <option value="flagship">Flagship (4× sector ship)</option>
+          <option value="station">Station (100× volume, capped)</option>
+          <option value="custom">Custom values below</option>
+        </select></div>
+      <div class="ctl"><label>Shield : hull ratio <span class="val" id="sratV">4.0</span></label>
+        <input type="range" id="srat" min="0" max="10" step="0.25" value="4"></div>
+      <div class="ctl"><label>Custom hull / shield HP</label>
+        <div class="row">
+          <input type="number" id="cHull" min="1" step="100" value="20000" style="width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);padding:7px;font-family:inherit;font-size:12.5px">
+          <input type="number" id="cShield" min="0" step="100" value="80000" style="width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);padding:7px;font-family:inherit;font-size:12.5px">
+        </div></div>
+      <div class="ctl"><label>Burst overkill</label>
+        <div style="font-size:11.5px"><label style="text-transform:none;letter-spacing:0;color:var(--ink);margin:0">
+        <input type="checkbox" id="okChk" checked> Penalise wasted volley damage</label></div>
+        <div class="sub" style="margin-top:4px">A 53k Predator volley into a 10k ship wastes 80%.</div></div>
+      <div class="ctl"><label>Shield resistance risk <span class="val" id="presV">50%</span></label>
+        <input type="range" id="pres" min="0" max="100" step="5" value="50"></div>
+      <div class="ctl"><label>Reserve turrets <span class="val" id="lockV">none</span></label>
+        <div class="row">
+          <select id="lockType">
+            <option value="">— none —</option>
+            <option value="Flamethrower" selected>Flamethrower</option>
+            <option value="Ophidian">Ophidian</option>
+            <option value="APCR Sniper">APCR Sniper</option>
+            <option value="Interceptor">Interceptor</option>
+            <option value="Triad Chaingun">Triad Chaingun</option>
+            <option value="Pulse Shotgun">Pulse Shotgun</option>
+            <option value="Predator Cannon">Predator Cannon</option>
+            <option value="Clandatoh Cannon">Clandatoh Cannon</option>
+          </select>
+          <input type="number" id="lockN" min="0" max="40" step="1" value="0"
+            style="width:74px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);padding:7px;font-family:inherit;font-size:12.5px">
+        </div></div>
+      <div class="ctl"><label>&nbsp;</label><button class="btn" id="solve" style="width:100%;padding:8px">Solve loadout</button></div>
+    </div>
+    <div id="optOut" class="note" style="font-size:12.5px;color:var(--ink)">Press solve.</div>
+  </div>
+
+  <div class="card" id="cardPanel" style="margin-top:22px">
+    <h2 style="color:#4fc3f7">Turret card</h2>
+    <div class="note">Click any row in the table below to inspect it. Untick an assumption to see the stat without that lucky roll. In-game tooltips build many lines from the <i>first</i> weapon only — the numbers here sum every barrel, which is what actually lands.</div>
+    <div class="controls" style="margin-bottom:14px">
+      <div class="ctl"><label>Assumptions</label>
+        <div style="display:flex;flex-direction:column;gap:5px;font-size:11.5px">
+          <label style="text-transform:none;letter-spacing:0;color:var(--ink);margin:0"><input type="checkbox" id="aInv" checked> Max factory investment</label>
+          <label style="text-transform:none;letter-spacing:0;color:var(--ink);margin:0"><input type="checkbox" id="aHR" checked> HighRange rolled</label>
+          <label style="text-transform:none;letter-spacing:0;color:var(--ink);margin:0"><input type="checkbox" id="aHD"> HighDamage rolled</label>
+        </div></div>
+      <div class="ctl"><label>Scale roll (50% chance of reduced tech)</label>
+        <select id="aScale"><option value="1" selected>Full tech — max slots</option>
+        <option value="0.75">×0.75 tech</option><option value="0.5">×0.5 tech</option><option value="0.25">×0.25 tech</option></select></div>
+      <div class="ctl"><label>Damage variation <span class="val" id="aVarV">1.05</span></label>
+        <input type="range" id="aVar" min="1.0" max="1.1" step="0.01" value="1.05"></div>
+      <div class="ctl"><label>Heat pool roll</label>
+        <select id="aHeat"><option value="best" selected>Best roll</option><option value="mean">Average</option><option value="worst">Worst roll</option></select></div>
+      <div class="ctl"><label>Calibrate: real Raw DPS <span class="sub" id="calInfo"></span></label>
+        <div class="row"><input type="number" id="calVal" placeholder="e.g. 2526.4" step="0.1"
+          style="width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);padding:7px;font-family:inherit;font-size:12.5px">
+        <button class="btn" id="calBtn">Fit</button></div></div>
+    </div>
+    <div id="cardOut" class="note">Select a turret from the table.</div>
+  </div>
+
+  <table id="tbl">
+    <thead><tr>
+      <th data-k="name">Turret</th><th data-k="cls">Class</th><th data-k="slots">Slots</th><th data-k="nb">Barrels</th>
+      <th data-k="hull">Hull dmg</th><th data-k="shield">Shield dmg</th>
+      <th data-k="pierce">Pierce</th><th data-k="km">Range km</th>
+      <th data-k="vel">Velocity</th><th data-k="duty">Duty</th><th data-k="inv">Fac. dmg</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <footer>
+    Values are peak effective DPS divided by turret slots, at the point-blank end of each weapon's envelope; the charts show decay across range.
+    Every figure sums the turret's real barrel assembly from <code>turretgenerator.lua</code> — Predator ×6 (asymmetric: barrel 1 uses <code>600+t</code>, the rest <code>20+t</code>), Proton ×7, Gatling ×5, Clandatoh / Interceptor / A.D.S.T. ×4, Ophidian 3×SW + 1×CW (the central barrel carries hull ×15), Triad / Flamethrower ×3, APCR ×2 (the generator re-adds its weapon without clearing).
+    Flight-time penalty is modelled as <code>1/(1+t)</code> — beams and seekers take none. Duty cycle uses each turret's real
+    <code>shootingTime/(shootingTime+coolingTime)</code>; the Pulse Shotgun pre-compensates its own duty in code, and the Flamethrower's is rolled per turret (10–45&nbsp;s shooting / 17.5–43.75&nbsp;s cooling).
+    Factory investment applies <code>stat &times; (1 + &Sigma;investFactor)</code>. Enemy resistance is <code>Shield:setResistance</code> — shield-only, ~95%, one of Physical / Plasma / Electric / AntiMatter on ~half of ships at Normal; hull damage and all Energy / Fragments weapons are immune.
+    Slot classes follow <code>weapontype.lua</code>: Salvaging / Mining / Hammer Heads are <b>Unarmed</b>, A.D.S.T. / Anti-Fighter / Torpedo are <b>Defense</b>.
+    The HET Salvaging Laser calls <code>adaptWeapon</code> (full ×(1+0.4·rarity)), not the mining ×1.05 path, on a <code>fireDelay</code> of 0.02 — a genuine outlier, but it rides free on unarmed slots.
+    Clandatoh range is capped by projectile lifetime (<code>pmaximumTime</code> is never rescaled), so its card range overstates reality.
+    Flamethrower shield penetration at Exceptional is 0.8. Budget constant fitted to 0.4439 against in-game cards (tech 36: Ophidian, Predator ×3 rarities, Clandatoh, Flamethrower, Salvaging ×2); difficulty does not scale turret stats; sector ship volume uses the mod's override of <code>Balancing_GetSectorShipVolume</code>. The game's own per-type eDPS card lines are built from the first weapon only and can misreport multi-barrel turrets — trust the Raw DPS field.
+  </footer>
+</div>
+
+<script>
+const NAMES=['Iron','Titanium','Naonite','Trinium','Xanion','Ogonite','Avorion'];
+const C={oph:'#c774e8',flame:'#ff4d5e',apcr:'#4fc3f7',icept:'#ffb74d',triad:'#7cb342',
+ salv:'#26a69a',pred:'#5c6bc0',clan:'#42a5f5',gat:'#ab47bc',proton:'#8d6e63',
+ drill:'#00e5a0',thunder:'#ec407a',swarm:'#ffa726',shot:'#ef5350',crawl:'#9ccc65',
+ adst:'#ffd54f',af:'#78909c',torp:'#90a4ae',rsalv:'#4db6ac',rmine:'#a1887f',
+ clusters:'#bcaaa4',mine:'#8d99ae',vlaser:'#ffffff',vrail:'#cfd8dc'};
+
+function budget(dist){
+  const l=[95*(1-dist/800),190*(1-dist/560),310*(1-dist/470),370*(1-dist/430),
+           470*(1-dist/360),550*(1-dist/310),650*Math.max(0,1-dist/220)];
+  const lg=Math.max(0,1-dist/220);
+  return Math.min(Math.max(...l),100*lg+500)*0.4439; // calibrated vs in-game cards, tech36
+}
+const distOf=t=>(52-t)/51*500;
+function beltMat(dist){
+  const f=dist/500,N=7,belt=m=>(N-m)/N-0.1,size=(belt(0)-belt(1))/2,thr=.5;
+  let best=0,bv=-1;
+  for(let i=0;i<N;i++){
+    const b=belt(i),d=Math.abs(f-b),s=b+size*(1+thr),h=b-size*(1+thr);
+    let t=h===s?0:(f-s)/(h-s); t=Math.max(0,Math.min(1,t));
+    let v=t*(1+i*i); let t2=Math.max(0,Math.min(1,(d-size)/(0-size))); v+=t2*(i*i*.5);
+    if(v>bv){bv=v;best=i;}
+  }
+  return best;
+}
+// specialty increase (HighRange / HighDamage share the same shape in addSpecialties):
+// increase = 0.1 + rarityFactor*0.4, rarityFactor = lerp(rar,-1,5,0.01,0.9)+~0.05
+const specMul=rar=>1+0.1+(0.01+(rar+1)/6*0.89+0.05)*0.4;
+
+const DT={'Ophidian':'Electric','APCR Sniper':'AntiMatter','Salvaging Laser':'Energy',
+'Flamethrower':'Physical','Interceptor':'Fragments','A.D.S.T.':'AntiMatter','Triad Chaingun':'Physical',
+'Proton Laser':'Energy','Clandatoh Cannon':'Plasma','Gatling Plasma':'Plasma','Predator Cannon':'ALL',
+'Pulse Shotgun':'AntiMatter','Swarm Missiles':'Physical','Crawlers':'Fragments','Thunder Hook':'Electric',
+'Neutron Drill':'AntiMatter','Homing Anti-Fighter':'Fragments','Torpedo Countermeasure':'Fragments',
+'R-Salv Hammer Head':'Fragments','R-Mining Hammer Head':'Fragments','Mining Laser':'Energy',
+'VANILLA Laser':'Energy','VANILLA Railgun':'Physical'};
+// only these four exist in SpawnUtility.resistanceKinds — Energy & Fragments can never be resisted
+const RESISTABLE=['Physical','Plasma','Electric','AntiMatter'];
+
+function build(){
+  const T=+tech.value, rar=+rarity.value, mat=+mat_.value;
+  const useHit=+hitm.value, useSpec=+spec.value;
+  const dist=distOf(T), D=budget(dist), ad=1+rar*0.4;       // adaptWeapon
+  const adMine=1+Math.max(0,rar)*0.05;                       // adaptMiningLaser (HET Mining only)
+  const HR=useSpec?specMul(rar):1;
+  const ACC={'Triad Chaingun':0.97,'Ophidian':0.99,'APCR Sniper':1.0,'Flamethrower':0.97,'Interceptor':0.997,'Clandatoh Cannon':0.998,'Gatling Plasma':0.995,'Pulse Shotgun':0.835,'Predator Cannon':1.0,'A.D.S.T.':1.0,'Swarm Missiles':0.30};
+  const FR={'Triad Chaingun':8.547,'Ophidian':1.429,'APCR Sniper':1.0,'Flamethrower':200,'Interceptor':2.105,'Clandatoh Cannon':2.857,'Gatling Plasma':10,'Pulse Shotgun':1.429,'Predator Cannon':0.5,'A.D.S.T.':2.5,'Salvaging Laser':50,'Proton Laser':11.1,'Swarm Missiles':10,'Neutron Drill':200,'Thunder Hook':20,'Crawlers':0.05};
+  const RTAB={'-1':0.7,0:0.14,1:0.21,2:0.28,3:0.36,4:0.42,5:0.49};
+  const MTAB={0:0.5,1:2.8,2:4.5,3:6.9,4:8.4,5:10.8,6:12.4};
+  const sc=(a)=>{for(const[lim,s,sl]of a){if(T<=lim)return[s,sl];}return a[a.length-1].slice(1);};
+  const L=[];
+  // volley cycle in seconds - long-cycle weapons waste damage on small targets
+  const CYCLE={'Predator Cannon':12,'Ophidian':2.7,'Flamethrower':40.38,'Swarm Missiles':6.5,
+    'Thunder Hook':102.3,'Neutron Drill':21,'Pulse Shotgun':19.5,'Crawlers':20,'APCR Sniper':1.0};
+  // cls: 'armed' | 'def' | 'una'  — only 'armed' competes for armed slots
+  // nb: real barrel count from the turret assembly; raw is PER-BARREL continuous DPS before adaptWeapon
+  const add=(n,key,cls,nb,raw,hm,sm,pierce,slots,inv,reach,vel,duty,hasHR,rinv,o)=>{
+    o=o||{}; rinv=rinv||1;
+    const b=raw*nb*(o.mine?adMine:ad)*inv;
+    let km=reach*rinv*(hasHR?HR:1)*(1+(slots-1)*0.15)/100, capped=false;
+    if(o.capKm!=null){const cap=o.capKm*(1+(slots-1)*0.25); if(km>cap){km=cap;capped=true;}}
+    L.push({name:n,c:C[key],cls,nb,hull:b*hm*duty,shield:b*sm*duty,tot:b*hm*duty*slots,pierce,slots,
+      hullMult:hm,shMult:sm,cycle:CYCLE[n]||0.2,hasHR,HRv:HR,dt:DT[n]||'—',acc:ACC[n]||null,fireRate:FR[n]||null,
+      km,capped,vel:vel==null?null:vel*(1+(slots-1)*0.25),duty,inv,rinv,raw:b,shSh:o.shSh||null});
+  };
+  const S=(a)=>sc(a);
+  // ---- armed --------------------------------------------------------------
+  let [s1,sl1]=S([[49,0.5,1],[52,1,2]]);
+  // Ophidian: 3 side weapons (shield x5) + 1 central (hull x15); one shot per barrel per 2.7s cycle
+  const odmg=(8+(T*0.2)*(RTAB[rar]*MTAB[mat]))/0.7;
+  add('Ophidian','oph','armed',4,odmg,(3*1+15)/4,(3*5+1*1)/4,0,sl1,1.07,(1000+Math.max(0,rar)*10)*1,1500,0.7/2.7,false,2.00);
+  [s1,sl1]=S([[15,2.5,4],[31,3,6],[52,3.5,8]]);
+  // Flamethrower: 3 barrels; shooting 10–45s / cooling 17.5–43.75s rolled per turret (mean shown)
+  add('Flamethrower','flame','armed',3,((rar>=5?9.5:8.5)+rar*0.1)/0.005,
+    (4.5+(0.2+(0.1+Math.max(0,rar)*0.1)))*(rar>=5?1.5:1),0,rar<0?0.4:Math.min(1,0.5+rar*0.1),sl1,1.45,100,400,27.5/58.125,false,1.00);
+  [s1,sl1]=S([[18,1,3],[25,1.5,3],[32,2,4],[39,3,4],[52,3.5,6]]);
+  // APCR: multiplicative material branch; assembly re-adds the weapon -> 2 barrels; heat-limited ~0.5 duty
+  const apcrDmg = mat>0 ? D*(mat/10+1)*2.5 : D+Math.max(0,rar)+25;
+  const apcrHM  = rar<=1 ? (rar<0?2:3) : (4+(rar*0.6+mat*0.6))*(rar>2?rar*0.2:1);
+  add('APCR Sniper','apcr','armed',2,apcrDmg,apcrHM,0.2,0,sl1,1.3,800,1000,0.5,true,2.50);
+  [s1,sl1]=S([[15,0.5,1],[31,1,2],[52,1.5,3]]);
+  // Interceptor: 4 barrels; d-table is indexed by MATERIAL
+  const iD=[0.15,0.25,0.35,0.45,0.55,0.65,0.75][mat];
+  add('Interceptor','icept','armed',4,(5+iD*((rar+2)*(mat+1)))/0.475,4+mat,1.0,0,sl1,2.1,750,1100,1.0,false,1.50);
+  // Triad: 3 barrels, IonizedProjectile always (pen rand 0.10–0.25, mean shown)
+  const triHM=rar<0?0:(0.1+(rar*0.1+mat*0.1))*(rar<=0?1:rar);
+  add('Triad Chaingun','triad','armed',3,(D*0.15/0.117),triHM,rar<=0?0.1:0.1+rar*0.1,0.175,sl1,1.7,450,1100,1.0,false,2.00);
+  [s1,sl1]=S([[35,2,4],[42,2.5,6],[49,3,8],[52,3.5,10]]);
+  // Clandatoh: 4 barrels, simultaneousShooting always on, no cooling; range capped by projectile lifetime (3s x scaled velocity)
+  const cHM={'-1':0.02,0:0.03,1:0.04,2:0.05,3:0.06,4:0.07,5:0.08}[rar];
+  const cSM={'-1':0.1,0:0.2,1:0.3,2:0.4,3:0.5,4:0.6,5:0.7}[rar]*(mat+1);
+  add('Clandatoh Cannon','clan','armed',4,(D*0.1887/0.35),cHM,cSM,0,sl1,1.75,1500,500,1.0,true,2.50,{capKm:15});
+  add('Swarm Missiles','swarm','armed',2,700,1.3+Math.max(0,rar)*0.3,0.025,0,sl1,2.25,1300,null,0.5/(0.5+15-Math.max(0,(Math.max(0,rar)+mat))),true,2.50);
+  [s1,sl1]=S([[35,0.5,1],[42,0.5,2],[49,1,3],[52,1,4]]);
+  // Gatling Plasma: 5 barrels (4 corners + centre)
+  add('Gatling Plasma','gat','armed',5,(D*0.10*0.1/0.10),1.0,3.2+Math.max(0,rar)*0.4,0,sl1,1.07,650,400,1.0,true,2.00);
+  [s1,sl1]=S([[31,0.5,2],[42,1,4],[52,1.5,6]]);
+  // Proton Laser: 7 beams (1 centre + 6 ring); damage tables by rarity AND material; no damage investment
+  const pN={'-1':0.056,0:0.056,1:0.059,2:0.063,3:0.066,4:0.070,5:0.078}[rar];
+  const pRV={'-1':0.2,0:0.3,1:0.4,2:0.4,3:0.5,4:0.6,5:0.8}[rar];
+  const pMV=[0.2,0.3,0.3,0.3,0.4,0.4,0.5][mat];
+  const protonSM = rar<0?1.1 : rar===0?2.2 : 1.1+(2.2+mat*0.1)*(mat+rar);
+  add('Proton Laser','proton','armed',7,(pN*((rar*pRV+3)+(mat*pMV+3)))/0.09,
+    rar<0?2.2:1.1+rar*1.1,protonSM,0,sl1,1.0,750,null,1.0,true,1.30);
+  [s1,sl1]=S([[15,1.5,3],[31,2.5,6],[52,3.5,9]]);
+  // Predator: 6 asymmetric barrels, 1s shoot / 11s cool. raw below already sums the volley over the 12s cycle -> nb=1 for math
+  const PT=T*((mat*1.3)+(rar*1.3)), pb1=600+PT, pb2=20+PT, pm=({'-1':1.3,0:1.4,1:1.5,2:1.6,3:1.7,4:1.8,5:1.9})[rar];
+  const pRaw=(pb1+5*pb2)/12;
+  const pHull=((pb1*pm)+(2*pb2*pm)+3*pb2)/12/pRaw;   // barrels 1,2,5 carry hull mult
+  const pShld=((pb1)+(2*pb2)+(3*pb2*pm))/12/pRaw;    // barrels 3,4,6 carry shield mult
+  const shS=pb1+2*pb2+3*pb2*pm;                      // shield-dps shares by type (for resistance)
+  const predSh={AntiMatter:pb1/shS,Physical:pb2/shS,Electric:pb2*pm/shS,Plasma:pb2*pm/shS};
+  add('Predator Cannon','pred','armed',1,pRaw,pHull,pShld,0,sl1,1.9,1500,500,1.0,false,1.00,{shSh:predSh});
+  L[L.length-1].nb=6; // display: six real barrels, already summed in raw
+  [s1,sl1]=S([[31,2.5,4],[42,3,6],[52,3.5,8]]);
+  // Pulse Shotgun: 1 weapon, 16 pellets; material>2 branch multiplies damage x(mat*2); duty pre-compensated in the generator
+  const shotDmg=D*0.56*(mat>2?mat*2:1)*1.5/0.7;
+  add('Pulse Shotgun','shot','armed',1,shotDmg,2.4+Math.max(0,rar)*0.6,0.2,(rar<0?0.01:0.015+rar*0.005),sl1,1.7,270,400,1.0,true,1.05);
+  L[L.length-1].nb=16;
+  [s1,sl1]=S([[10,1.5,4],[20,2,6],[30,2.5,8],[40,3,10],[52,3.5,12]]);
+  add('Thunder Hook','thunder','armed',1,((D*0.05*0.001)*(mat+2)*(rar+3)*T/0.05),0.025,((mat+1)+Math.max(0,rar)*0.4)/6,0,sl1,1.4,850,null,2.3/102.3,true,1.00);
+  [s1,sl1]=S([[12,2,4],[24,2.5,6],[32,3,8],[52,3.5,10]]);
+  add('Crawlers','crawl','armed',1,((40+mat)*(mat+1)/20),2+mat*1.2,2+mat*1.2,0,sl1,1.45,450,null,1.0,true,1.00);
+  if(dist<=70){
+    [s1,sl1]=S([[28,3.5,6],[35,3.5,8],[42,3.5,10],[49,3.5,12],[52,3.5,14]]);
+    add('Neutron Drill','drill','armed',1,(0.04*D),50+Math.max(0,rar)*10,2*(50+Math.max(0,rar)*10),0,sl1,1.14,1200,null,15/(15+10-Math.max(0,rar)),false,1.20);
+  }
+  // ---- defensive (PointDefense slots — excluded from the armed solver) ----
+  [s1,sl1]=S([[49,0.5,1],[52,1,2]]);
+  add('A.D.S.T.','adst','def',4,((2+(2.7*4.7))/0.4),1.5,1.0,0,sl1,1.9,(600+Math.max(0,rar)*10),2430,1.0,false,1.25);
+  add('Homing Anti-Fighter','af','def',2,((1.5+1.1*Math.max(0,rar))/6),1.0,1.0,0,1,3.75,2000,null,1.0,true,2.50);
+  add('Torpedo Countermeasure','torp','def',2,((1.2-mat*0.1)/0.26),1.0,1.0,0,1,1.0,(350+mat*50),2000,1.0,true,1.55);
+  // ---- unarmed (own slot pool — free hull DPS on top of any armed loadout) ----
+  [s1,sl1]=S([[12,0.5,1],[30,1,2],[49,1.5,3],[52,3.5,6]]);
+  const DIVT={'-1':2,0:5,1:1.3,2:0.7,3:0.7,4:0.7,5:0.7}, div=DIVT[rar];
+  const RSALV={'-1':150,0:200,1:250,2:300,3:350,4:400,5:450};
+  // HET Salvaging calls adaptWeapon (full x2.2 at Exceptional) — NOT the mining x1.05 path
+  add('Salvaging Laser','salv','una',1,(((10+mat*0.1)+((D*0.02)/div))/0.02),1.0,0,0,sl1,2.0,RSALV[rar],null,1.0,false,3.00);
+  add('Mining Laser','mine','una',1,((0.2+((D*0.002)/div))/0.1),1.0,0,0,sl1,2.0,160+Math.max(0,rar)*40,null,1.0,false,3.00,{mine:true});
+  [s1,sl1]=S([[35,0.5,1],[42,1,2],[49,1.5,3],[52,2,6]]);
+  add('R-Salv Hammer Head','rsalv','una',1,((D*0.09)/0.1),2.0+mat*0.4+Math.max(0,rar)*0.6,0,0,sl1,1.07,200,250,1.0,true,2.00);
+  add('R-Mining Hammer Head','rmine','una',1,((((D*0.07)/2)*0.1)/0.1),0.1,0,0,sl1,1.07,200,250,1.0,true,2.00);
+  // ---- vanilla baselines (reference only) ----
+  [s1,sl1]=S([[31,0.5,2],[42,1,4],[52,1.5,6]]);
+  add('VANILLA Laser','vlaser','armed',1,D*1.5,1.0,1.0,0,sl1,1.0,750,null,1.0,false,1.00);
+  [s1,sl1]=S([[15,1,3],[31,1.5,4],[52,2,5]]);
+  add('VANILLA Railgun','vrail','armed',1,D,1.0,1.0,0,sl1,1.0,1000,1500,1.0,false,1.00);
+  return {L,D,dist,ad,HR};
+}
+
+const hitF=(km,vel,use)=>(!use||vel==null)?1:1/(1+(km*100)/vel);
+function curves(L,mode,useHit){
+  return L.map(w=>{
+    let m = mode==='hull' ? w.hull : w.shield;
+    if(metric.value==='total') m*=w.slots;
+    if(m<=0||!isFinite(m)) return null;
+    const pts=[]; const N=26;
+    for(let i=0;i<=N;i++){
+      const km=Math.max(0.2,w.km*i/N);
+      pts.push({x:+km.toFixed(2), y:+(m*hitF(km,w.vel,useHit)).toFixed(1)});
+    }
+    return {label:w.name,borderColor:w.c,backgroundColor:w.c,data:pts,
+      borderWidth:1.8,pointRadius:0,tension:.15};
+  }).filter(Boolean);
+}
+
+// mod's Balancing_GetSectorShipVolume override (bigger ships than vanilla)
+function shipVolume(dist){
+  const maxd=500, d=Math.min(dist,maxd), lin=1-d/maxd;
+  const lout=Math.min(1,Math.max(0,1-d/400)), lmid=Math.min(1,Math.max(0,1-d/350));
+  const q=2000,lo=3000,louter=4500,lmidC=8200,b=500,center=2750;
+  let df=Math.pow(lin*3+1,4)-1;
+  let v=df*(q/255)+lin*lo+lout*louter+lmid*lmidC;
+  return v*(center/(q+lo+louter+lmidC))+b;
+}
+// engine-side block durability isn't in the Lua; strengthFactor rises ~1.5x per tier
+const MATSTR=[1,1.5,2.25,3.375,5.0625,7.59,11.39];
+function targetHP(dist,mat,kind,ratio){
+  const v=shipVolume(dist);
+  const mult={fighter:0.15,ship:1,flagship:4,station:100}[kind]||1;
+  let volume=v*mult;
+  if(kind==='station') volume=Math.min(150000,v*100);
+  // HP proxy: volume x material strength x calibration constant
+  const hull=volume*MATSTR[mat]*3.0;
+  return [hull, hull*ratio];
+}
+
+let CAL=1.0, cardName='Ophidian';
+const HEAT={'Flamethrower':[10,45,17.5,43.75],'Ophidian':[0.7,0.7,2.0,2.0],
+ 'APCR Sniper':[0.5,0.5,0.5,0.5],'Predator Cannon':[1,1,11,11],'Swarm Missiles':[0.5,0.5,6,6],
+ 'Thunder Hook':[2.3,2.3,100,100],'Neutron Drill':[15,15,5,5],'Pulse Shotgun':[11,11,8.5,8.5]};
+const CREW={1:'1 Gunner',2:'2 Gunners'};
+const CLSNAME={armed:'Armed',def:'Defense',una:'Unarmed'};
+function drawCard(){
+  const {L}=build(); const w=L.find(x=>x.name===cardName); if(!w){cardOut.textContent='—';return;}
+  const rar=+rarity.value;
+  const scaleMul=+aScale.value, slots=Math.max(1,Math.round(w.slots*scaleMul));
+  let mult=CAL*(+aVar.value);
+  if(!aInv.checked) mult/=w.inv;
+  if(aHD.checked) mult*=specMul(rar);
+  let duty=w.duty; const h=HEAT[w.name];
+  if(h){const[a,b,c,d]=h;
+    duty= aHeat.value==='best'? b/(b+c) : aHeat.value==='worst'? a/(a+d) : ((a+b)/2)/(((a+b)/2)+((c+d)/2));}
+  const k=w.duty>0?duty/w.duty:1;
+  const hullPS=w.hull*mult*k, shPS=w.shield*mult*k;
+  const rawPS=(w.hullMult>0? hullPS/w.hullMult : shPS/(w.shMult||1));
+  let km=w.km;
+  if(!aInv.checked) km/=w.rinv;
+  if(!aHR.checked && w.hasHR) km/=w.HRv;
+  const nb=w.nb||1;
+  const fireRate=(w.fireRate||0)*(nb>1&&w.name!=='Pulse Shotgun'?nb:1);
+  const perShot=fireRate>0? rawPS*slots/fireRate:0;
+  const R=(a,b,c)=>`<tr><td style="text-align:left;color:var(--dim);padding:4px 9px">${a}</td><td style="text-align:left;padding:4px 9px"><b>${b}</b></td><td style="text-align:left;color:var(--dim);font-size:10.5px;padding:4px 9px">${c||''}</td></tr>`;
+  const pct=(x)=>(x>=1? '+'+Math.round((x-1)*100):Math.round((x-1)*100))+'%';
+  cardOut.innerHTML=`<div style="border:1px solid var(--line);border-left:3px solid ${w.c};padding:12px 4px 8px">
+  <div style="font-family:'Chakra Petch',sans-serif;font-size:16px;letter-spacing:.06em;text-transform:uppercase;padding:0 9px 4px;color:${w.c}">${w.name}</div>
+  <div style="padding:0 9px 10px;color:var(--dim);font-size:11px">Tech ${tech.value} &middot; ${rarity.options[rarity.selectedIndex].text} &middot; ${NAMES[+mat_.value]} &middot; ${CLSNAME[w.cls]} slot</div>
+  <table style="margin:0"><tbody>
+  ${R('Average DPS /slot',Math.round((hullPS+shPS)/2).toLocaleString())}
+  ${R('Hull DPS /slot',Math.round(hullPS).toLocaleString())}
+  ${R('Shield DPS /slot',shPS>0?Math.round(shPS).toLocaleString():'—',shPS>0?'':'no shield damage')}
+  ${R('Raw DPS',Math.round(rawPS*slots).toLocaleString(),'before multipliers, all barrels')}
+  ${R('Barrels',nb>1?nb+(w.name==='Pulse Shotgun'?' pellets / shot':' — all summed here'):'1','in-game per-type card lines may show one')}
+  ${R('Hull Damage',(perShot*w.hullMult).toFixed(1),'per volley, whole turret')}
+  ${R('Shield Damage',w.shMult>0?(perShot*w.shMult).toFixed(1):'—',w.shMult>0?'per volley, whole turret':'')}
+  ${R('Fire Rate',fireRate?fireRate.toFixed(2):'—',nb>1?'all barrels':'')}
+  ${R('Damage Type',w.dt==='ALL'?'All six (per barrel)':w.dt||'—',(w.dt==='Energy'||w.dt==='Fragments')?'cannot be resisted':'')}
+  ${R('Shield Penetration',w.pierce>0?(w.pierce*100).toFixed(1)+'%':'—')}
+  ${R('Accuracy',w.acc?(w.acc*100).toFixed(1)+'%':'—')}
+  ${R('Velocity',w.vel==null?'beam':Math.round(w.vel*10).toLocaleString()+' m/s')}
+  ${R('Range',km.toFixed(2)+' km',w.capped?'capped by projectile lifetime':'')}
+  ${R('Duty cycle',Math.round(duty*100)+'%',h?aHeat.value+' heat roll':'no cooling')}
+  ${R('Volley cycle',w.cycle>0.5?w.cycle+' s':'sustained',w.cycle>0.5?'burst of '+Math.round(hullPS*slots*w.cycle).toLocaleString()+' hull dmg':'')}
+  ${R('Slots',slots,scaleMul<1?'reduced scale roll':'max for tech')}
+  ${R('Crew',CREW[Math.min(2,slots)]||slots+' Gunners')}
+  ${R('Turret total hull DPS',Math.round(hullPS*slots).toLocaleString(),'damage ×slots')}
+  </tbody></table>
+  <div style="padding:8px 9px 0;font-size:11.5px">
+    <span style="color:var(--hull)">${pct(w.hullMult)} Damage to Hull</span>
+    ${w.pierce>0?'<br><span style="color:#4fc3f7">Ionized Projectiles</span>':''}
+    ${nb>1?'<br><span style="color:#7cb342">Synchronized Weapons ×'+nb+'</span>':''}
+    ${w.cls!=='armed'?'<br><span style="color:#ffd54f">Mounts on '+CLSNAME[w.cls]+' slots — does not use an armed slot</span>':''}
+  </div></div>`;
+}
+function solve(){
+  const {L}=build(); const B=+slotBudget.value;
+  const band=band_.value.split(',').map(Number);
+  const ratio=+srat.value;
+  let H,S;
+  if(profile.value==='custom'){H=Math.max(1,+cHull.value);S=Math.max(0,+cShield.value);}
+  else {[H,S]=targetHP(distOf(+tech.value),+mat_.value,profile.value,ratio);}
+  const pres=+pres_.value/100;
+  // ONLY armed turrets compete for armed slots
+  const P=L.filter(w=>w.cls==='armed'&&!/^VANILLA/.test(w.name)&&w.slots<=B&&(w.hull>0||w.shield>0));
+  const OVERKILL=okChk.checked;
+  const idx=P.map(w=>({n:w.name,sl:w.slots,h:w.hull,s:w.shield,p:w.pierce,km:w.km,v:w.vel,cycle:w.cycle,dt:w.dt,shSh:w.shSh}));
+  // resistance: shield-only, 95%, one of the four resistable types. hull + pierce damage never reduced.
+  const at=(w,km,res)=>{ if(km>w.km)return[0,0,0];
+    const f=w.v==null?1:1/(1+(km*100)/w.v);
+    let sr=1;
+    if(res){ if(w.dt===res) sr=0.05;
+      else if(w.shSh&&w.shSh[res]) sr=1-w.shSh[res]*0.95; }
+    return [w.h*f, w.s*f*sr, w.p];};
+  // overkill: a volley bigger than the remaining pool wastes the excess
+  const okEff=(dps,cycle,pool)=>{ if(cycle<=0.5||dps<=0) return 1;
+    const burst=dps*cycle; if(burst<=0) return 1;
+    return pool/(Math.ceil(pool/burst)*burst); };
+  const ttk=(c,km,res)=>{let sh=0,pi=0,fu=0;
+    for(let i=0;i<idx.length;i++){const q=c[i]; if(!q)continue;
+      const[a,b,p]=at(idx[i],km,res); const sl=idx[i].sl*q; const cy=idx[i].cycle;
+      const eH=OVERKILL?okEff(a*sl,cy,H):1, eS=OVERKILL?okEff(b*sl,cy,S):1;
+      sh+=b*sl*eS; pi+=a*p*sl*eH; fu+=a*sl*eH;}
+    if(sh<=0&&pi<=0)return 1e9;
+    if(sh<=0)return H/pi;
+    const t1=S/sh; if(pi*t1>=H)return H/pi;
+    return t1+(H-pi*t1)/fu;};
+  const obj=(c)=>{let t=0;
+    for(const km of band){let base=ttk(c,km,null),worst=0;
+      for(const r of RESISTABLE){const v=ttk(c,km,r); if(v>worst)worst=v;}
+      t+=(1-pres)*base+pres*Math.min(worst,1e9);}
+    return t/band.length;};
+  const lockName=lockType.value, lockQty=Math.max(0,parseInt(lockN.value)||0);
+  const lockI=idx.findIndex(w=>w.n===lockName);
+  let reserved=new Array(idx.length).fill(0), rUsed=0, lockNote='';
+  if(lockI>=0&&lockQty>0){
+    const fits=Math.min(lockQty,Math.floor(B/idx[lockI].sl));
+    reserved[lockI]=fits; rUsed=fits*idx[lockI].sl;
+    if(fits<lockQty) lockNote=` &middot; <span style="color:var(--hot)">only ${fits} × ${lockName} fit in ${B} slots (${idx[lockI].sl} each)</span>`;
+  }
+  let cur=reserved.slice(),used=rUsed;
+  for(;;){let bi=-1,bv=Infinity;
+    for(let i=0;i<idx.length;i++){ if(used+idx[i].sl>B)continue;
+      cur[i]++; const v=obj(cur); cur[i]--;
+      if(v<bv){bv=v;bi=i;} }
+    if(bi<0)break; cur[bi]++; used+=idx[bi].sl;}
+  let bc=cur.slice(),bv=obj(bc);
+  for(let it=0;it<6000;it++){
+    const c=bc.slice(); let u=c.reduce((a,q,i)=>a+q*idx[i].sl,0);
+    for(let k=0;k<1+(it%3);k++){const nz=c.map((q,i)=>q>reserved[i]?i:-1).filter(i=>i>=0);
+      if(!nz.length)break; const d=nz[(Math.random()*nz.length)|0]; c[d]--; u-=idx[d].sl;}
+    for(;;){const o=idx.map((w,i)=>u+w.sl<=B?i:-1).filter(i=>i>=0);
+      if(!o.length)break; const i=o[(Math.random()*o.length)|0]; c[i]++; u+=idx[i].sl;}
+    const v=obj(c); if(v<bv){bv=v;bc=c;}}
+  const rows=idx.map((w,i)=>({...w,q:bc[i],res:reserved[i]})).filter(w=>w.q>0)
+    .sort((a,b)=>b.q*b.sl-a.q*a.sl);
+  const used2=rows.reduce((a,w)=>a+w.q*w.sl,0);
+  const types=[...new Set(rows.map(w=>w.dt))];
+  const immune=rows.every(w=>w.dt==='Energy'||w.dt==='Fragments');
+  optOut.innerHTML=`<b>${rows.map(w=>`${w.n} ×${w.q}${w.res?'<span class="tag">'+w.res+' reserved</span>':''}`).join(' &nbsp;+&nbsp; ')}</b><br>
+    <span style="color:var(--dim)">${used2}/${B} armed slots used &middot; objective ${bv.toFixed(4)} &middot;
+    target hull ${Math.round(H).toLocaleString()} / shield ${Math.round(S).toLocaleString()} &middot; damage types: ${types.join(', ')}${immune?' — <span style="color:#7cb342">immune to shield resistances</span>':''} &middot; band ${band[0]}–${band[band.length-1]} km${lockNote}
+    &middot; tip: add Salvaging Lasers on unarmed slots for free hull DPS</span>`;
+}
+
+let hullC,shieldC,hidden=new Set(),sortK='hull',sortDir=-1;
+const tech=document.getElementById('tech'),rarity=document.getElementById('rarity'),
+ mat_=document.getElementById('mat'),diff=document.getElementById('diff'),
+ hitm=document.getElementById('hitm'),spec=document.getElementById('spec'),
+ slotBudget=document.getElementById('slotBudget'),band_=document.getElementById('band'),
+ profile=document.getElementById('profile'),pres_=document.getElementById('pres'),
+ optOut=document.getElementById('optOut'),
+ lockType=document.getElementById('lockType'),lockN=document.getElementById('lockN'),
+ cardOut=document.getElementById('cardOut'),cardPanel=document.getElementById('cardPanel'),
+ aInv=document.getElementById('aInv'),aHR=document.getElementById('aHR'),aHD=document.getElementById('aHD'),
+ aScale=document.getElementById('aScale'),aVar=document.getElementById('aVar'),aHeat=document.getElementById('aHeat'),
+ calVal=document.getElementById('calVal'),calBtn=document.getElementById('calBtn'),calInfo=document.getElementById('calInfo'),
+ okChk=document.getElementById('okChk'),
+ metric=document.getElementById('metric'),
+ srat=document.getElementById('srat'),cHull=document.getElementById('cHull'),cShield=document.getElementById('cShield');
+
+aVar.addEventListener('input',()=>document.getElementById('aVarV').textContent=(+aVar.value).toFixed(2));
+document.getElementById('aVarV').textContent=(+aVar.value).toFixed(2);
+[aInv,aHR,aHD,aScale,aVar,aHeat].forEach(el=>el.addEventListener('input',drawCard));
+calBtn.onclick=()=>{
+  const {L}=build(); const w=L.find(x=>x.name===cardName); if(!w)return;
+  const real=+calVal.value; if(!real||real<=0)return;
+  const rawNow=(w.hullMult>0? w.hull/w.hullMult : w.shield/(w.shMult||1))*w.slots*(+aVar.value);
+  CAL=real/(rawNow/CAL||real);
+  calInfo.textContent='×'+CAL.toFixed(4);
+  drawCard();
+};
+
+function opts(axis,maxX){return{responsive:true,maintainAspectRatio:false,parsing:false,
+ interaction:{mode:'nearest',intersect:false},animation:false,
+ plugins:{legend:{display:false},tooltip:{callbacks:{
+   label:c=>`${c.dataset.label}: ${Math.round(c.parsed.y).toLocaleString()} ${axis} DPS ${metric.value==='total'?'per turret':'/slot'} @ ${c.parsed.x} km`}}},
+ scales:{x:{type:'linear',min:0,max:maxX,title:{display:true,text:'engagement range (km)',color:'#7e8fa2',font:{size:11}},
+   ticks:{color:'#7e8fa2',font:{size:10}},grid:{color:'rgba(36,48,64,.7)'}},
+  y:{type:'linear',beginAtZero:true,title:{display:true,text:`${axis} DPS ${metric.value==='total'?'per turret':'per slot'}`,color:'#7e8fa2',font:{size:11}},
+   ticks:{color:'#7e8fa2',font:{size:10},callback:v=>v>=1000?(v/1000)+'k':v},grid:{color:'rgba(36,48,64,.7)'}}}};}
+
+function render(){
+  const {L,D,dist,ad,HR}=build();
+  document.getElementById('techV').textContent=tech.value;
+  document.getElementById('distV').textContent=`(~${Math.round(dist)} sectors out)`;
+  document.getElementById('oBudget').textContent=D.toFixed(1);
+  document.getElementById('oDist').textContent=Math.round(dist);
+  document.getElementById('oAdapt').textContent='×'+ad.toFixed(1);
+  document.getElementById('oHR').textContent='×'+HR.toFixed(2);
+  document.getElementById('oBelt').textContent=NAMES[beltMat(dist)];
+  document.getElementById('oVol').textContent=Math.round(shipVolume(dist)).toLocaleString()+' m³';
+
+  const useHit=+hitm.value;
+  const dh=curves(L,'hull',useHit).filter(d=>!hidden.has(d.label));
+  const ds=curves(L,'shield',useHit).filter(d=>!hidden.has(d.label));
+  const mx=Math.max(10,...L.filter(w=>!hidden.has(w.name)).map(w=>w.km));
+  if(hullC)hullC.destroy(); if(shieldC)shieldC.destroy();
+  hullC=new Chart(document.getElementById('hullChart'),{type:'line',data:{datasets:dh},options:opts('hull',mx)});
+  shieldC=new Chart(document.getElementById('shieldChart'),{type:'line',data:{datasets:ds},options:opts('shield',mx)});
+
+  ['Hull','Shield'].forEach((k,i)=>{
+    const box=document.getElementById('legend'+k);
+    box.innerHTML='';
+    const all=(i? L.filter(w=>w.shield>0):L);
+    all.forEach(w=>{
+      const on=!hidden.has(w.name);
+      const el=document.createElement('span');
+      el.className='chip '+(on?'on':'off');
+      el.innerHTML=`<span class="sw" style="background:${w.c}"></span>${w.name}`;
+      el.onclick=()=>{hidden.has(w.name)?hidden.delete(w.name):hidden.add(w.name);render();};
+      el.tabIndex=0; el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();el.click();}};
+      box.appendChild(el);
+    });
+  });
+
+  const perSlot = metric.value==='slot';
+  const dual=(v,sl)=>{const a=perSlot?v:v*sl, b=perSlot?v*sl:v;
+    return Math.round(a).toLocaleString()+' <span style="color:var(--dim);font-size:10.5px">('+Math.round(b).toLocaleString()+')</span>';};
+  const tb=document.querySelector('#tbl tbody'); tb.innerHTML='';
+  const CLSORD={armed:0,def:1,una:2};
+  const rows=[...L].sort((a,b)=>{
+    const kv=(o)=>{ if(sortK==='hull') return perSlot?o.hull:o.hull*o.slots;
+      if(sortK==='shield') return perSlot?o.shield:o.shield*o.slots;
+      if(sortK==='cls') return CLSORD[o.cls];
+      if(sortK==='nb') return o.nb||1;
+      return o[sortK]??0;};
+    const x=sortK==='name'?a.name.localeCompare(b.name):kv(a)-kv(b);
+    return sortDir*x;});
+  rows.forEach(w=>{
+    const tr=document.createElement('tr');
+    const clsTag=w.cls==='def'?'<span class="tag def">defense</span>':w.cls==='una'?'<span class="tag una">unarmed</span>':'';
+    tr.innerHTML=`<td><span class="sw" style="display:inline-block;background:${w.c};margin-right:7px"></span>${w.name}${clsTag}${w.pierce>0?'<span class="tag">pierce</span>':''}${w.vel==null?'<span class="tag">no travel</span>':''}${w.capped?'<span class="tag">despawn cap</span>':''}</td>
+      <td>${CLSNAME[w.cls]}</td><td>${w.slots}</td><td>${w.nb||1}</td><td>${dual(w.hull,w.slots)}</td>
+      <td>${w.shield>0?dual(w.shield,w.slots):'—'}</td>
+      <td>${w.pierce>0?Math.round(w.pierce*100)+'%':'—'}</td>
+      <td>${w.km.toFixed(1)}</td><td>${w.vel==null?'beam':w.vel}</td>
+      <td>${Math.round(w.duty*100)}%</td><td>×${w.inv.toFixed(2)}</td>`;
+    tr.style.cursor='pointer';tr.onclick=()=>{cardName=w.name;drawCard();cardPanel.scrollIntoView({behavior:'smooth',block:'nearest'});};
+    tb.appendChild(tr);
+  });
+  document.querySelectorAll('#tbl th').forEach(th=>{
+    th.classList.toggle('sorted',th.dataset.k===sortK);
+    if(th.dataset.k==='hull') th.textContent=perSlot?'Hull /slot (total)':'Hull total (/slot)';
+    if(th.dataset.k==='shield') th.textContent=perSlot?'Shield /slot (total)':'Shield total (/slot)';});
+}
+document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{
+  const k=th.dataset.k;
+  if(sortK===k)sortDir*=-1; else {sortK=k;sortDir=(k==='name'||k==='cls')?1:-1;}
+  render();});
+[tech,rarity,mat_,diff,hitm,spec,metric].forEach(el=>el.addEventListener('input',render));
+document.getElementById('matSync').onclick=()=>{
+  mat_.value=beltMat(distOf(+tech.value)); render();};
+document.getElementById('solve').onclick=solve;
+slotBudget.addEventListener('input',()=>document.getElementById('budV').textContent=slotBudget.value);
+pres_.addEventListener('input',()=>document.getElementById('presV').textContent=pres_.value+'%');
+const lockLbl=()=>document.getElementById('lockV').textContent=
+  (+lockN.value>0&&lockType.value)?(lockN.value+' × '+lockType.value):'none';
+lockN.addEventListener('input',lockLbl); lockType.addEventListener('change',lockLbl); lockLbl();
+srat.addEventListener('input',()=>{document.getElementById('sratV').textContent=(+srat.value).toFixed(2);
+  const [h,sh]=targetHP(distOf(+tech.value),+mat_.value,profile.value==='custom'?'ship':profile.value,+srat.value);
+  cHull.value=Math.round(h); cShield.value=Math.round(sh);});
+profile.addEventListener('change',()=>srat.dispatchEvent(new Event('input')));
+tech.addEventListener('input',()=>srat.dispatchEvent(new Event('input')));
+srat.dispatchEvent(new Event('input'));
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+@import 'tailwindcss';
+
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+@import '@fontsource/chakra-petch/400.css';
+@import '@fontsource/chakra-petch/600.css';
+@import '@fontsource/chakra-petch/700.css';
+
+@theme {
+  --color-void: #0a0e14;
+  --color-panel: #121821;
+  --color-panel2: #182029;
+  --color-line: #243040;
+  --color-ink: #d8e2ec;
+  --color-dim: #7e8fa2;
+  --color-hull: #ff8a3d;
+  --color-shield: #4fc3f7;
+  --color-hot: #ff4d5e;
+  --color-solver: #c774e8;
+  --color-warn: #ffd54f;
+  --color-good: #7cb342;
+  --color-teal: #26a69a;
+
+  --font-display: 'Chakra Petch', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --radius-hud: 2px;
+}
+
+@layer base {
+  html {
+    background: var(--color-void);
+  }
+
+  body {
+    @apply m-0 bg-void text-ink font-mono text-[13px] leading-normal;
+  }
+
+  h1,
+  h2 {
+    @apply font-display;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-1 outline-hull;
+  }
+
+  input[type='range'] {
+    @apply my-0.5 w-full bg-transparent;
+    accent-color: var(--color-hull);
+  }
+}
+
+@layer components {
+  /* An HUD panel — the base surface everything sits on. */
+  .hud-panel {
+    @apply border border-line bg-panel;
+  }
+
+  /* Auto-fitting grid of labelled controls. */
+  .hud-controls {
+    @apply grid gap-4 border border-line bg-panel px-[18px] py-4;
+    grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  }
+
+  .hud-label {
+    @apply mb-[7px] block text-[10.5px] uppercase tracking-[0.13em] text-dim;
+  }
+
+  /* Inline label inside a control (checkbox rows) — reads as body text. */
+  .hud-label-inline {
+    @apply m-0 text-ink normal-case tracking-normal;
+  }
+
+  .hud-value {
+    @apply font-semibold text-hull;
+  }
+
+  .hud-input {
+    @apply w-full rounded-hud border border-line bg-panel2 px-[9px] py-[7px] font-mono text-[12.5px] text-ink;
+  }
+
+  .hud-btn {
+    @apply cursor-pointer rounded-hud border border-line bg-panel2 px-[9px] py-[5px]
+           font-mono text-[10.5px] uppercase tracking-[0.08em] text-dim
+           hover:border-hull hover:text-ink;
+  }
+
+  .hud-note {
+    @apply mb-3 text-[11px] text-dim;
+  }
+
+  .hud-tag {
+    @apply ml-1.5 rounded-hud border border-line px-[5px] py-px text-[9.5px] text-dim;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

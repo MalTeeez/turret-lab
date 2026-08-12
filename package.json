@@ -1,0 +1,26 @@
+{
+  "name": "avorion-turret-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Effective DPS per slot for HET and vanilla Avorion turrets — Svelte + Tailwind + Bun",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "bun test",
+    "check": "bun test"
+  },
+  "dependencies": {
+    "@fontsource/chakra-petch": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "chart.js": "^4.5.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "svelte": "^5.56.8",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.2.0"
+  }
+}
