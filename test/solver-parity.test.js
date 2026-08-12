@@ -82,8 +82,10 @@ test.each(CASES)(
     const w = presetWeights(presetFor(band), BAND_ANCHORS);
     const bands = BAND_ANCHORS.map((km, i) => ({ km, w: w[i] / 100 })).filter((b) => b.w > 0);
 
+    // The single lock type generalised to a reserved map; one entry must behave identically.
     const Bres = solveLoadout(mk().L, {
-      budget: B, bands, pres, hull, shield, overkill, lockId: lockName, lockN,
+      budget: B, bands, pres, hull, shield, overkill,
+      reserved: lockName && lockN ? { [lockName]: lockN } : {},
     });
 
     expect(Bres.rows.map((r) => r.n)).toEqual(A.rows.map((r) => r.n));

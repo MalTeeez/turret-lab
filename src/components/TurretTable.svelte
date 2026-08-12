@@ -1,6 +1,6 @@
 <script>
   import ModelFlag from './ModelFlag.svelte';
-  import { sim, view, card, sortBy } from '../lib/state.svelte.js';
+  import { sim, view, card, opt, solverIdsFor, sortBy } from '../lib/state.svelte.js';
   import { CLSNAME } from '../lib/model.js';
   import { n0 } from '../lib/format.js';
 
@@ -109,12 +109,17 @@
     <tbody>
       {#each rows as w (w.id)}
         {@const h = dual(w.hull, w.slots)}
+        {@const ids = solverIdsFor(w.id)}
+        {@const res = ids.reduce((a, id) => a + (opt.reserved[id] ?? 0), 0)}
         <tr
           class="cursor-pointer border-b border-line hover:bg-panel2 {card.id === w.id ? 'bg-panel2' : ''}"
           onclick={() => onselect(w.id)}
         >
           <td class="px-[9px] py-1.5 text-left">
             <span class="mr-[7px] inline-block size-[9px] rounded-[1px]" style:background={w.c}></span>{w.name}
+            {#if ids.length && ids.every((id) => opt.excluded.has(id))}<span class="hud-tag border-[#5c2f33] text-hot">excluded</span>{/if}
+            {#if res > 0}<span class="hud-tag border-[#3d5c33] text-good">reserve {res}</span>{/if}
+            {#if ids.length && ids[0] !== w.id}<span class="hud-tag border-[#3d5c33] text-good" title="The solver is drawing this type from your registered turrets">yours ×{ids.length}</span>{/if}
             {#if w.src === 'vanilla'}<span class="hud-tag border-[#3d4a5c] text-shield">vanilla</span>{/if}
             {#if w.cls === 'def'}<span class="hud-tag border-[#5c5330] text-warn">defense</span>{/if}
             {#if w.cls === 'una'}<span class="hud-tag border-[#1d4c48] text-teal">unarmed</span>{/if}

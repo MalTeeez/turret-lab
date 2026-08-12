@@ -171,7 +171,9 @@ export function build(p) {
     'Pulse Shotgun': 0.835, 'Predator Cannon': 1.0, 'A.D.S.T.': 1.0, 'Swarm Missiles': 0.3,
   };
   const FR = {
-    'Triad Chaingun': 8.547, 'Ophidian': 1.429, 'APCR Sniper': 1.0, 'Flamethrower': 200,
+    // APCR: 1 shot instantly overheats (+400% heat) and takes 2 s to dissipate, so the
+    // whole assembly sustains 0.5 shots/s — matches the in-game card's Fire Rate.
+    'Triad Chaingun': 8.547, 'Ophidian': 1.429, 'APCR Sniper': 0.5, 'Flamethrower': 200,
     'Interceptor': 2.105, 'Clandatoh Cannon': 2.857, 'Gatling Plasma': 10, 'Pulse Shotgun': 1.429,
     'Predator Cannon': 0.5, 'A.D.S.T.': 2.5, 'Salvaging Laser': 50, 'Proton Laser': 11.1,
     'Swarm Missiles': 10, 'Neutron Drill': 200, 'Thunder Hook': 20, 'Crawlers': 0.05,
@@ -179,8 +181,16 @@ export function build(p) {
   const RTAB = { '-1': 0.7, 0: 0.14, 1: 0.21, 2: 0.28, 3: 0.36, 4: 0.42, 5: 0.49 };
   const MTAB = { 0: 0.5, 1: 2.8, 2: 4.5, 3: 6.9, 4: 8.4, 5: 10.8, 6: 12.4 };
 
-  /** Walk a tech-level scaling table, returning the slot count for this tech. */
+  /**
+   * Walk a tech-level scaling table, returning the slot count for this tech. The rows are
+   * remembered so add() can attach a re-walker: the in-game scale roll re-enters the same
+   * table at a REDUCED tech, which lands on slot counts that plain scaling of the full-tech
+   * count never produces (a tech-37 Clandatoh is 6 slots; its reduced rolls are 4 — not 5, 3
+   * or 2 — because those are the only bands in the table).
+   */
+  let sRows = null;
   const S = (a) => {
+    sRows = a;
     for (const [lim, , sl] of a) if (T <= lim) return sl;
     return a[a.length - 1][2];
   };
@@ -189,7 +199,7 @@ export function build(p) {
   const CYCLE = {
     'Predator Cannon': 12, 'Ophidian': 2.7, 'Flamethrower': 40.38, 'Swarm Missiles': 6.5,
     'Thunder Hook': 102.3, 'Neutron Drill': 21, 'Pulse Shotgun': 19.5, 'Crawlers': 20,
-    'APCR Sniper': 1.0,
+    'APCR Sniper': 2.0,
   };
 
   const L = [];
@@ -201,17 +211,26 @@ export function build(p) {
     o = o || {};
     rinv = rinv || 1;
     const b = raw * nb * (o.mine ? adMine : ad) * inv;
-    let km = (reach * rinv * (hasHR ? HR : 1) * (1 + (slots - 1) * 0.15)) / 100, capped = false;
-    if (o.capKm != null) {
-      const cap = o.capKm * (1 + (slots - 1) * 0.25);
-      if (km > cap) { km = cap; capped = true; }
-    }
+    // Reach is authoritative: the engine keeps projectile lifetime consistent with it through
+    // scaling and factory investment (verified — real Clandatoh / APCR cards show the full
+    // reach x investment x slot factor, and the tooltip's Range IS pvelocity x pmaximumTime).
+    // The old capKm ("projectile lifetime") model is therefore gone.
+    const km = (reach * rinv * (hasHR ? HR : 1) * (1 + (slots - 1) * 0.15)) / 100;
+    // Re-walker for the card's scale roll. Attached only when the captured table reproduces
+    // this weapon's full-tech slot count — fixed-slot turrets (Homing AF, Torpedo CM) pass a
+    // literal count and must not inherit a neighbour's table.
+    const rows = sRows;
+    const slotsAt = rows
+      ? (t) => { for (const [lim, , sl] of rows) if (t <= lim) return sl; return rows[rows.length - 1][2]; }
+      : null;
     L.push({
       name: n, c: C[key], cls, nb, hull: b * hm * duty, shield: b * sm * duty,
       tot: b * hm * duty * slots, pierce, slots, hullMult: hm, shMult: sm,
       cycle: CYCLE[n] || 0.2, hasHR, HRv: HR, dt: DT[n] || '—', acc: ACC[n] || null,
-      fireRate: FR[n] || null, km, capped, vel: vel == null ? null : vel * (1 + (slots - 1) * 0.25),
+      fireRate: FR[n] || null, km, capped: false, vel: vel == null ? null : vel * (1 + (slots - 1) * 0.25),
       duty, inv, rinv, raw: b, shSh: o.shSh || null,
+      slotsAt: slotsAt && slotsAt(T) === slots ? slotsAt : null,
+      kmSlots: true,
     });
   };
 
@@ -223,16 +242,25 @@ export function build(p) {
     (1000 + Math.max(0, rar) * 10) * 1, 1500, 0.7 / 2.7, false, 2.0);
 
   sl1 = S([[15, 2.5, 4], [31, 3, 6], [52, 3.5, 8]]);
-  // Flamethrower: 3 barrels; shooting 10–45s / cooling 17.5–43.75s rolled per turret (mean shown)
-  add('Flamethrower', 'flame', 'armed', 3, ((rar >= 5 ? 9.5 : 8.5) + rar * 0.1) / 0.005,
+  // Flamethrower: 3 barrels, but createStandardCooling runs while only ONE is attached, so the
+  // heat pool is sized for the single-barrel rate — the other two burn the same budget and add
+  // no sustained DPS. Shooting 10–45s / cooling 17.5–43.75s rolled per turret (mean shown).
+  add('Flamethrower', 'flame', 'armed', 1, ((rar >= 5 ? 9.5 : 8.5) + rar * 0.1) / 0.005,
     (4.5 + (0.2 + (0.1 + Math.max(0, rar) * 0.1))) * (rar >= 5 ? 1.5 : 1), 0,
     rar < 0 ? 0.4 : Math.min(1, 0.5 + rar * 0.1), sl1, 1.45, 100, 400, 27.5 / 58.125, false, 1.0);
+  L[L.length - 1].nb = 3; // display: three real barrels, alternating in one heat pool
+  L[L.length - 1].alt = true;
 
   sl1 = S([[18, 1, 3], [25, 1.5, 3], [32, 2, 4], [39, 3, 4], [52, 3.5, 6]]);
-  // APCR: multiplicative material branch; assembly re-adds the weapon -> 2 barrels; heat-limited ~0.5 duty
+  // APCR: multiplicative material branch. The assembly re-adds the weapon ("Double"), but the
+  // heat pool is created before that with ONE weapon attached: a shot instantly overheats and
+  // takes 2 s to dissipate, so the pair alternates inside the single-barrel budget and adds no
+  // sustained DPS. Verified against an in-game card (fire rate 0.5, +400% heat/shot, dps = dmg/2).
   const apcrDmg = mat > 0 ? D * (mat / 10 + 1) * 2.5 : D + Math.max(0, rar) + 25;
   const apcrHM = rar <= 1 ? (rar < 0 ? 2 : 3) : (4 + (rar * 0.6 + mat * 0.6)) * (rar > 2 ? rar * 0.2 : 1);
-  add('APCR Sniper', 'apcr', 'armed', 2, apcrDmg, apcrHM, 0.2, 0, sl1, 1.3, 800, 1000, 0.5, true, 2.5);
+  add('APCR Sniper', 'apcr', 'armed', 1, apcrDmg, apcrHM, 0.2, 0, sl1, 1.3, 800, 1000, 0.5, true, 2.5);
+  L[L.length - 1].nb = 2; // display: two real barrels, alternating in one heat pool
+  L[L.length - 1].alt = true;
 
   sl1 = S([[15, 0.5, 1], [31, 1, 2], [52, 1.5, 3]]);
   // Interceptor: 4 barrels; d-table is indexed by MATERIAL
@@ -246,11 +274,12 @@ export function build(p) {
     rar <= 0 ? 0.1 : 0.1 + rar * 0.1, 0.175, sl1, 1.7, 450, 1100, 1.0, false, 2.0);
 
   sl1 = S([[35, 2, 4], [42, 2.5, 6], [49, 3, 8], [52, 3.5, 10]]);
-  // Clandatoh: 4 barrels, simultaneousShooting always on, no cooling; range capped by projectile lifetime
+  // Clandatoh: 4 barrels, simultaneousShooting always on, no cooling. Reach follows investment
+  // and slot scaling in full — a real 4-slot Exotic card reads 54.38 km, exactly 1500 x2.5 x1.45.
   const cHM = { '-1': 0.02, 0: 0.03, 1: 0.04, 2: 0.05, 3: 0.06, 4: 0.07, 5: 0.08 }[rar];
   const cSM = { '-1': 0.1, 0: 0.2, 1: 0.3, 2: 0.4, 3: 0.5, 4: 0.6, 5: 0.7 }[rar] * (mat + 1);
   add('Clandatoh Cannon', 'clan', 'armed', 4, (D * 0.1887) / 0.35, cHM, cSM, 0, sl1, 1.75, 1500, 500,
-    1.0, true, 2.5, { capKm: 15 });
+    1.0, true, 2.5);
 
   add('Swarm Missiles', 'swarm', 'armed', 2, 700, 1.3 + Math.max(0, rar) * 0.3, 0.025, 0, sl1, 2.25,
     1300, null, 0.5 / (0.5 + 15 - Math.max(0, Math.max(0, rar) + mat)), true, 2.5);
@@ -377,6 +406,17 @@ export function shipVolume(dist) {
 /** Engine-side block durability isn't in the Lua; strengthFactor rises ~1.5x per tier. */
 export const MATSTR = [1, 1.5, 2.25, 3.375, 5.0625, 7.59, 11.39];
 
+/**
+ * The shield:hull slider is symmetric about an even target. Its position is the ratio's
+ * distance from 1:1 — positive leans shield, negative leans hull — so the two halves mirror
+ * each other and either end reaches a fivefold lean.
+ */
+export const SRAT_LEAN = 4;                                  // 1 + 4 => 5:1 at each end
+export const sratFromPos = (p) => (p >= 0 ? 1 + p : 1 / (1 - p));
+export const sratToPos = (r) => (r >= 1 ? r - 1 : 1 - 1 / r);
+export const sratLabel = (r) =>
+  r > 1 ? `${r.toFixed(2)} : 1 shield` : r < 1 ? `${(1 / r).toFixed(2)} : 1 hull` : 'even 1 : 1';
+
 export function targetHP(dist, mat, kind, ratio) {
   const v = shipVolume(dist);
   const mult = { fighter: 0.15, ship: 1, flagship: 4, station: 100 }[kind] || 1;
@@ -394,7 +434,13 @@ export function targetHP(dist, mat, kind, ratio) {
 export function cardStats(w, a) {
   if (!w) return null;
 
-  const slots = Math.max(1, Math.round(w.slots * a.aScale));
+  // The in-game scale roll regenerates the size at a reduced tech, so slot counts come from
+  // re-walking the turret's own scale table there — rounding the full-tech count produces
+  // variants that do not exist and misses ones that do. Per-slot DPS is scale-independent
+  // (the generator multiplies weapon damage by the rolled slot count).
+  const slots = a.aScale < 1 && w.slotsAt && a.tech != null
+    ? Math.max(1, w.slotsAt(Math.max(1, Math.floor(a.tech * a.aScale))))
+    : Math.max(1, Math.round(w.slots * a.aScale));
   let mult = a.cal * a.aVar;
   if (!a.aInv) mult /= w.inv;
   if (a.aHD) mult *= specMul(a.rarity);
@@ -412,20 +458,40 @@ export function cardStats(w, a) {
   const hullPS = w.hull * mult * k, shPS = w.shield * mult * k;
   const rawPS = w.hullMult > 0 ? hullPS / w.hullMult : shPS / (w.shMult || 1);
 
-  let km = w.km;
+  // Range and velocity carry the ROLLED slot count's factors (reach x1+0.15/slot,
+  // velocity x1+0.25/slot).
+  let km = w.km, vel = w.vel;
+  if (slots !== w.slots && w.kmSlots) {
+    km = (w.km / (1 + (w.slots - 1) * 0.15)) * (1 + (slots - 1) * 0.15);
+    if (vel != null) vel = (vel / (1 + (w.slots - 1) * 0.25)) * (1 + (slots - 1) * 0.25);
+  }
   if (!a.aInv) km /= w.rinv;
   if (!a.aHR && w.hasHR) km /= w.HRv;
 
   const nb = w.nb || 1;
-  const fireRate = (w.fireRate || 0) * (nb > 1 && w.name !== 'Pulse Shotgun' ? nb : 1);
+  // Pulse Shotgun's nb is pellets, and the APCR's fire rate is already the whole assembly's
+  // heat-limited rate — neither multiplies by barrel count.
+  const fireRate = (w.fireRate || 0)
+    * (nb > 1 && w.name !== 'Pulse Shotgun' && w.name !== 'APCR Sniper' ? nb : 1);
   const perShot = fireRate > 0 ? (rawPS * slots) / fireRate : 0;
 
-  return { w, slots, duty, hullPS, shPS, rawPS, km, nb, fireRate, perShot, hasHeatRoll: !!h };
+  return { w, slots, duty, hullPS, shPS, rawPS, km, vel, nb, fireRate, perShot, hasHeatRoll: !!h };
 }
 
-/** Solve for the calibration multiplier that makes Raw DPS match an in-game card. */
-export function fitCalibration(w, real, aVar, cal) {
+/**
+ * Solve for the calibration multiplier that makes the card's Raw DPS row equal a value read
+ * off an in-game card, under the assumption toggles currently in force.
+ *
+ * Derived from cardStats at cal=1, so every toggle (scale roll, heat roll, investment,
+ * HighDamage, variation) is respected and re-fitting is idempotent. The original app divided
+ * the uncalibrated figure by the current multiplier, which compounded on every re-fit, and it
+ * ignored all toggles but the variation slider.
+ *
+ * @param {object} a the cardStats assumptions; any `cal` in it is ignored
+ */
+export function fitCalibration(w, real, a) {
   if (!w || !real || real <= 0) return null;
-  const rawNow = (w.hullMult > 0 ? w.hull / w.hullMult : w.shield / (w.shMult || 1)) * w.slots * aVar;
-  return real / (rawNow / cal || real);
+  const s = cardStats(w, { ...a, cal: 1 });
+  const rawNow = s ? s.rawPS * s.slots : 0;
+  return rawNow > 0 ? real / rawNow : null;
 }

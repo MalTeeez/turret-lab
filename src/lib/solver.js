@@ -23,28 +23,60 @@ export function solveLoadout(L, o) {
   const pres = +o.pres / 100;
   const H = Math.max(1, +o.hull), S = Math.max(0, +o.shield);
   const OVERKILL = !!o.overkill;
+  // Excluded turrets never enter the candidate list, so they cannot be picked at all.
+  const excluded = o.excluded ?? new Set();
 
   if (!bands.length) {
     return {
       rows: [], used: 0, budget: B, objective: 0, H, S, types: [], immune: false,
-      bands, bandSpan: null, lockNote: '',
+      candidates: 0, excluded: [...excluded], bands, bandSpan: null, lockNote: '',
+      unreachable: [], unreachableW: 0,
     };
   }
 
   const P = L.filter(
-    (w) => w.cls === 'armed' && !/^VANILLA/.test(w.name) && w.slots <= B && (w.hull > 0 || w.shield > 0),
+    (w) =>
+      w.cls === 'armed' &&
+      !/^VANILLA/.test(w.name) &&
+      w.slots <= B &&
+      (w.hull > 0 || w.shield > 0) &&
+      !excluded.has(w.id ?? w.name),
   );
   const idx = P.map((w) => ({
     id: w.id ?? w.name, n: w.name, sl: w.slots, h: w.hull, s: w.shield, p: w.pierce,
     km: w.km, v: w.vel, cycle: w.cycle, dt: w.dt, shSh: w.shSh, c: w.c, src: w.src,
+    // How many exist. Unbounded for generated turrets; the count you own in inventory mode.
+    max: w.maxQty ?? Infinity,
   }));
 
   if (!idx.length) {
     return {
       rows: [], used: 0, budget: B, objective: 0, H, S, types: [], immune: false,
-      bands, bandSpan: null, lockNote: '',
+      candidates: 0, excluded: [...excluded], bands, bandSpan: null, lockNote: '',
+      unreachable: [], unreachableW: 0,
     };
   }
+
+  // A weighted band that NO candidate can reach — or, against a shielded target, that only
+  // candidates with neither shield damage nor pierce reach — reads "cannot kill" (1e9 s) for
+  // every possible loadout. That constant steers nothing but would poison the reported
+  // average, so such bands are dropped from the objective and surfaced instead.
+  const canHurt = (w) => (S > 0 ? w.s > 0 || (w.h > 0 && w.p > 0) : w.h > 0);
+  const inReach = (km) => idx.some((w) => w.km >= km && canHurt(w));
+  const unreachable = bands.filter((b) => !inReach(b.km));
+  const active = bands.filter((b) => inReach(b.km));
+  const unreachableW = totalW > 0 ? unreachable.reduce((a, b) => a + b.w, 0) / totalW : 0;
+
+  if (!active.length) {
+    // the pool cannot hurt this target anywhere on the curve
+    return {
+      rows: [], used: 0, budget: B, objective: 1e9, H, S, types: [], immune: false,
+      candidates: idx.length, excluded: [...excluded], bands, lockNote: '',
+      bandSpan: [bands[0].km, bands[bands.length - 1].km],
+      unreachable, unreachableW,
+    };
+  }
+  const activeW = active.reduce((a, b) => a + b.w, 0);
 
   // Resistance: shield-only, 95%, one of the four resistable types. Hull + pierce damage never reduced.
   const at = (w, km, res) => {
@@ -58,9 +90,11 @@ export function solveLoadout(L, o) {
     return [w.h * f, w.s * f * sr, w.p];
   };
 
-  // Overkill: a volley bigger than the remaining pool wastes the excess.
+  // Overkill: a volley bigger than the remaining pool wastes the excess. An empty pool
+  // (shield-less target) must read as "no penalty", not 0/0 = NaN — a NaN objective made
+  // every loadout containing a long-cycle, shield-capable turret unselectable.
   const okEff = (dps, cycle, pool) => {
-    if (cycle <= 0.5 || dps <= 0) return 1;
+    if (cycle <= 0.5 || dps <= 0 || pool <= 0) return 1;
     const burst = dps * cycle;
     if (burst <= 0) return 1;
     return pool / (Math.ceil(pool / burst) * burst);
@@ -88,7 +122,7 @@ export function solveLoadout(L, o) {
 
   const obj = (c) => {
     let t = 0;
-    for (const { km, w } of bands) {
+    for (const { km, w } of active) {
       const base = ttk(c, km, null);
       let worst = 0;
       for (const r of RESISTABLE) {
@@ -97,22 +131,31 @@ export function solveLoadout(L, o) {
       }
       t += w * ((1 - pres) * base + pres * Math.min(worst, 1e9));
     }
-    return t / totalW;
+    return t / activeW;
   };
 
-  // Reserved turrets are seeded first and never removed by the ruin pass.
-  const lockQty = Math.max(0, parseInt(o.lockN, 10) || 0);
-  const lockI = idx.findIndex((w) => w.id === o.lockId);
+  // Reserved turrets are seeded first and never removed by the ruin pass; each takes
+  // what fits in the slots still free.
   const reserved = new Array(idx.length).fill(0);
-  let rUsed = 0, lockNote = '';
-  if (lockI >= 0 && lockQty > 0) {
-    const fits = Math.min(lockQty, Math.floor(B / idx[lockI].sl));
-    reserved[lockI] = fits;
-    rUsed = fits * idx[lockI].sl;
-    if (fits < lockQty) {
-      lockNote = `only ${fits} × ${idx[lockI].n} fit in ${B} slots (${idx[lockI].sl} each)`;
+  const shortfalls = [];
+  let rUsed = 0;
+
+  for (const [id, want] of Object.entries(o.reserved ?? {})) {
+    const qty = Math.max(0, parseInt(want, 10) || 0);
+    if (!qty) continue;
+    const i = idx.findIndex((w) => w.id === id);
+    if (i < 0) {
+      shortfalls.push(`${id} is not available to the solver`);
+      continue;
+    }
+    const fits = Math.min(qty, idx[i].max, Math.floor((B - rUsed) / idx[i].sl));
+    reserved[i] = fits;
+    rUsed += fits * idx[i].sl;
+    if (fits < qty) {
+      shortfalls.push(`only ${fits} × ${idx[i].n} fit in ${B} slots (${idx[i].sl} each)`);
     }
   }
+  const lockNote = shortfalls.join(' · ');
 
   // Greedy: add whichever turret improves the objective most, until slots run out.
   const cur = reserved.slice();
@@ -120,7 +163,7 @@ export function solveLoadout(L, o) {
   for (;;) {
     let bi = -1, bv = Infinity;
     for (let i = 0; i < idx.length; i++) {
-      if (used + idx[i].sl > B) continue;
+      if (used + idx[i].sl > B || cur[i] >= idx[i].max) continue;
       cur[i]++;
       const v = obj(cur);
       cur[i]--;
@@ -144,7 +187,9 @@ export function solveLoadout(L, o) {
       u -= idx[d].sl;
     }
     for (;;) {
-      const open = idx.map((w, i) => (u + w.sl <= B ? i : -1)).filter((i) => i >= 0);
+      const open = idx
+        .map((w, i) => (u + w.sl <= B && c[i] < w.max ? i : -1))
+        .filter((i) => i >= 0);
       if (!open.length) break;
       const i = open[(Math.random() * open.length) | 0];
       c[i]++;
@@ -167,8 +212,11 @@ export function solveLoadout(L, o) {
     used: rows.reduce((a, w) => a + w.q * w.sl, 0),
     budget: B,
     objective: bv,
+    candidates: idx.length,
+    excluded: [...excluded],
     H, S, types, immune, lockNote,
     bands,
     bandSpan: [bands[0].km, bands[bands.length - 1].km],
+    unreachable, unreachableW,
   };
 }

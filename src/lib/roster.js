@@ -21,7 +21,14 @@ export const ROSTERS = [
   ['vanilla', 'Vanilla only'],
 ];
 
-const tag = (w, src) => ({ ...w, src, id: src === 'het' ? w.name : `v:${w.name}` });
+/** Carry the sim's rarity/material onto each entry — factory pricing needs them. */
+const tag = (w, src, p) => ({
+  ...w,
+  src,
+  id: src === 'het' ? w.name : `v:${w.name}`,
+  rarityValue: +p.rarity,
+  materialValue: +p.mat,
+});
 
 /**
  * @param {{tech:number, rarity:number, mat:number, spec:number, roster:string}} p
@@ -29,11 +36,11 @@ const tag = (w, src) => ({ ...w, src, id: src === 'het' ? w.name : `v:${w.name}`
  */
 export function buildRoster(p) {
   const het = build(p);
-  const hetL = het.L.map((w) => tag(w, 'het'));
+  const hetL = het.L.map((w) => tag(w, 'het', p));
 
   if (p.roster === 'het') return { ...het, L: hetL };
 
-  const vanillaL = buildVanilla(p).map((w) => tag(w, 'vanilla'));
+  const vanillaL = buildVanilla(p).map((w) => tag(w, 'vanilla', p));
   if (p.roster === 'vanilla') return { ...het, L: vanillaL };
 
   return { ...het, L: [...hetL.filter((w) => !LEGACY_VANILLA.has(w.name)), ...vanillaL] };

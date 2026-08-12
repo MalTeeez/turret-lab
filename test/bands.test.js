@@ -4,7 +4,8 @@
  */
 import { expect, test } from 'bun:test';
 import {
-  BAND_ANCHORS, BAND_PRESETS, bandPos, bandSet, presetWeights, resampleWeights,
+  BAND_ANCHORS, BAND_PRESETS, SRAT_LEAN, bandPos, bandSet, presetWeights, resampleWeights,
+  sratFromPos, sratLabel, sratToPos, targetHP,
 } from '../src/lib/model.js';
 import { buildRoster } from '../src/lib/roster.js';
 
@@ -99,4 +100,37 @@ test('resampling survives degenerate input', () => {
   expect(resampleWeights([], [], BAND_ANCHORS)).toEqual(BAND_ANCHORS.map(() => 0));
   expect(resampleWeights(null, null, [1, 2])).toEqual([0, 0]);
   expect(resampleWeights([5], [42], [1, 5, 90])).toEqual([42, 42, 42]);
+});
+
+// --- shield : hull slider ----------------------------------------------------------------
+
+test('the shield:hull slider is centred on an even target', () => {
+  expect(sratFromPos(0)).toBe(1);
+  expect(sratToPos(1)).toBe(0);
+  expect(sratLabel(1)).toBe('even 1 : 1');
+});
+
+test('either end of the slider reaches a fivefold lean', () => {
+  expect(sratFromPos(SRAT_LEAN)).toBe(5);
+  expect(sratFromPos(-SRAT_LEAN)).toBeCloseTo(1 / 5, 12);
+  expect(sratLabel(sratFromPos(SRAT_LEAN))).toBe('5.00 : 1 shield');
+  expect(sratLabel(sratFromPos(-SRAT_LEAN))).toBe('5.00 : 1 hull');
+});
+
+test('the two halves mirror each other exactly', () => {
+  for (let p = 0.25; p <= SRAT_LEAN; p += 0.25) {
+    // a lean of N to the right is N shield per hull; the same lean left is N hull per shield
+    expect(sratFromPos(p) * sratFromPos(-p), `pos ${p}`).toBeCloseTo(1, 12);
+    const [h, s] = targetHP(1, 4, 'ship', sratFromPos(p));
+    const [h2, s2] = targetHP(1, 4, 'ship', sratFromPos(-p));
+    expect(h).toBe(h2);
+    expect(s / h, `pos ${p}`).toBeCloseTo(h2 / s2, 9);
+  }
+});
+
+test('every slider step round-trips back to the same position', () => {
+  for (let p = -SRAT_LEAN; p <= SRAT_LEAN; p += 0.25) {
+    // the input snaps to 0.25, so the trip through the ratio must not drift off a step
+    expect(+sratToPos(sratFromPos(p)).toFixed(4), `pos ${p}`).toBe(+p.toFixed(4));
+  }
 });

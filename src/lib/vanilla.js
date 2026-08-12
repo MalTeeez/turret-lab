@@ -9,13 +9,15 @@
  * count. Projectile types multiply `fireDelay` by the barrel count and beam types
  * divide `damage` by it, so total turret output is the sector DPS budget either way.
  * The barrel count shown here is therefore cosmetic — unlike the HET turrets, whose
- * assemblies genuinely stack.
+ * assemblies genuinely stack (except the APCR Sniper and Flamethrower, whose heat pool
+ * is created before the extra barrels are added — those alternate; see model.js).
  *
  * Rolled ranges (`rand:getFloat(a, b)`) are collapsed to their mean, matching how the
  * rest of this lab reports an average roll.
  */
 
 import { budget, distOf, specMul } from './model.js';
+import { RECIPE_KEY, investmentFor } from './factory.js';
 
 /** Distinct from the HET palette so the two rosters read apart on a chart. */
 const VC = {
@@ -56,8 +58,13 @@ export function buildVanilla(p) {
   const HR = useSpec ? specMul(rar) : 1;
   const rf = rarityFactor(rar);
 
-  /** Pick the slot count for this tech from a vanilla `scales` table. */
+  /**
+   * Pick the slot count for this tech from a vanilla `scales` table. The rows are remembered
+   * so add() can attach a re-walker for the card's scale roll — see the HET model.
+   */
+  let sRows = null;
   const S = (rows) => {
+    sRows = rows;
     for (const [to, slots] of rows) if (T <= to) return slots;
     return rows[rows.length - 1][1];
   };
@@ -73,9 +80,22 @@ export function buildVanilla(p) {
   const add = (n, key, cls, nb, raw, hm, sm, pierce, slots, size, reach, vel, duty, fireRate, o) => {
     o = o || {};
     const factor = o.noAdapt ? 1 : o.mine ? adMine : ad;
-    const b = raw * factor;
+
+    // Max turret-factory investment, from the recipe's own investFactor sums — the same
+    // basis the HET numbers use, so the two rosters are finally comparable.
+    const recipe = RECIPE_KEY.vanilla[n];
+    const inv = investmentFor(recipe, 'damage');
+    const rinv = investmentFor(recipe, 'reach');
+
+    const b = raw * factor * inv;
     const reachMul = o.miningReach ? size + 0.5 : 1 + (slots - 1) * 0.15;
-    const km = (reach * HR * reachMul) / 100;
+    const km = (reach * rinv * HR * reachMul) / 100;
+    // Scale-roll re-walker; guarded like the HET one. Mining/salvaging reach follows the
+    // size term rather than the slot factor, so those keep their full-tech range on a roll.
+    const rows = sRows;
+    const slotsAt = rows
+      ? (t) => { for (const [to, sl] of rows) if (t <= to) return sl; return rows[rows.length - 1][1]; }
+      : null;
     L.push({
       name: n, c: VC[key], cls, nb, src: 'vanilla',
       hull: b * hm * duty, shield: b * sm * duty, tot: b * hm * duty * slots,
@@ -83,7 +103,9 @@ export function buildVanilla(p) {
       cycle: o.cycle || 0.2, hasHR: true, HRv: HR,
       dt: VANILLA_DT[n] || '—', acc: o.acc ?? null, fireRate,
       km, capped: false, vel: vel == null ? null : vel * (1 + (slots - 1) * 0.25),
-      duty, inv: 1, rinv: 1, raw: b, shSh: null,
+      duty, inv, rinv, raw: b, shSh: null,
+      slotsAt: slotsAt && slotsAt(T) === slots ? slotsAt : null,
+      kmSlots: !o.miningReach,
     });
   };
 

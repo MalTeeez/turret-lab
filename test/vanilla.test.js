@@ -6,6 +6,7 @@ import { expect, test } from 'bun:test';
 import { budget, distOf } from '../src/lib/model.js';
 import { buildVanilla } from '../src/lib/vanilla.js';
 import { buildRoster } from '../src/lib/roster.js';
+import { RECIPE_KEY, investmentFor } from '../src/lib/factory.js';
 
 const P = { tech: 36, rarity: 5, mat: 4, spec: 1 };
 const D = budget(distOf(P.tech));
@@ -15,6 +16,9 @@ const adMine = 1 + P.rarity * 0.05;     // adaptMiningLaser
 const V = buildVanilla(P);
 const by = (n) => V.find((w) => w.name === n);
 const close = (a, b) => expect(Math.abs(a - b)).toBeLessThan(1e-9);
+
+/** Max factory damage investment for a turret, straight from its recipe. */
+const dmgInv = (n) => investmentFor(RECIPE_KEY.vanilla[n], 'damage');
 
 test('every weapon type in weapontype.lua is present', () => {
   expect(V).toHaveLength(19);
@@ -29,20 +33,22 @@ test('every weapon type in weapontype.lua is present', () => {
 });
 
 test('damage multipliers on the sector budget follow weapongenerator.lua', () => {
-  close(by('Laser').hull, D * 1.5 * ad * (20 / 50));            // dps * fireDelay * 1.5, 20s/30s battery
-  close(by('Tesla Gun').hull, D * 2.0 * ad * (15 / 35));        // dps * fireDelay * 2.0
-  close(by('Lightning Gun').hull, D * 1.15 * ad * (15 / 35));   // dps * fireDelay * 1.15
-  close(by('Chaingun').hull, D * ad);                           // plain dps, no cooling
-  close(by('Cannon').hull, D * ad * (25 / 40));
-  close(by('Railgun').hull, D * ad * (27.5 / 37.5));
-  close(by('Rocket Launcher').hull, D * ad * (20 / 35));
+  const b = (n) => D * ad * dmgInv(n);
+  close(by('Laser').hull, b('Laser') * 1.5 * (20 / 50));            // dps * fireDelay * 1.5, 20s/30s battery
+  close(by('Tesla Gun').hull, b('Tesla Gun') * 2.0 * (15 / 35));    // dps * fireDelay * 2.0
+  close(by('Lightning Gun').hull, b('Lightning Gun') * 1.15 * (15 / 35));
+  close(by('Chaingun').hull, b('Chaingun'));                        // plain dps, no cooling
+  close(by('Cannon').hull, b('Cannon') * (25 / 40));
+  close(by('Railgun').hull, b('Railgun') * (27.5 / 37.5));
+  close(by('Rocket Launcher').hull, b('Rocket Launcher') * (20 / 35));
 });
 
 test('bolter and pulse pre-compensate their cooling, so sustained output is the full budget', () => {
   const bolter = by('Bolter');
-  close(bolter.raw * bolter.duty, D * ad);
+  close(bolter.raw * bolter.duty, D * ad * dmgInv('Bolter'));
   const pulse = by('Pulse Cannon');
-  close(pulse.raw * pulse.duty, D * 0.75 * ad);   // pulse trades 25% dps for shield penetration
+  // pulse trades 25% dps for shield penetration
+  close(pulse.raw * pulse.duty, D * 0.75 * ad * dmgInv('Pulse Cannon'));
 });
 
 test('pulse cannons always pierce, scaled toward 1 by rarity', () => {
@@ -59,10 +65,10 @@ test('plasma and bolter carry their damage on the right axis', () => {
 });
 
 test('mining takes the x1.05 rarity path, salvaging the full x1.4', () => {
-  close(by('Mining Laser').hull, D * adMine);
-  close(by('Salvaging Laser').hull, D * ad);
-  close(by('R-Mining Laser').hull, D * adMine);
-  close(by('R-Salvaging Laser').hull, D * ad);
+  close(by('Mining Laser').hull, D * adMine * dmgInv('Mining Laser'));
+  close(by('Salvaging Laser').hull, D * ad * dmgInv('Salvaging Laser'));
+  close(by('R-Mining Laser').hull, D * adMine * dmgInv('R-Mining Laser'));
+  close(by('R-Salvaging Laser').hull, D * ad * dmgInv('R-Salvaging Laser'));
   for (const n of ['Mining Laser', 'Salvaging Laser', 'R-Mining Laser', 'R-Salvaging Laser']) {
     expect(by(n).shield, `${n} should do no shield damage`).toBe(0);
     expect(by(n).cls).toBe('una');
@@ -73,9 +79,9 @@ test('mining takes the x1.05 rarity path, salvaging the full x1.4', () => {
 
 test('point defense damage is flat, not derived from the sector budget', () => {
   const pdc = by('Point Defense Cannon');
-  close(pdc.hull, (((1.5 + P.rarity * 0.25) * 0.1 + P.tech * 0.05) / 0.0875) * ad);
+  close(pdc.hull, (((1.5 + P.rarity * 0.25) * 0.1 + P.tech * 0.05) / 0.0875) * ad * dmgInv('Point Defense Cannon'));
   const pdl = by('Point Defense Laser');
-  close(pdl.hull, (((5 + P.rarity * 0.25) * 0.1 + P.tech * 0.05) / 0.2) * ad);
+  close(pdl.hull, (((5 + P.rarity * 0.25) * 0.1 + P.tech * 0.05) / 0.2) * ad * dmgInv('Point Defense Laser'));
 
   // same tech, different distance from core => budget changes but PD damage does not
   const near = buildVanilla({ ...P, tech: 52 }).find((w) => w.name === 'Point Defense Cannon');
@@ -92,8 +98,20 @@ test('repair and force turrets do no damage', () => {
   }
 });
 
-test('vanilla carries no factory investment, and beams have no travel time', () => {
-  for (const w of V) expect(w.inv, `${w.name}`).toBe(1);
+test('factory investment comes from each turret recipe, and beams have no travel time', () => {
+  // every vanilla turret must resolve to a recipe, or its investment silently defaults to x1
+  for (const w of V) {
+    expect(RECIPE_KEY.vanilla[w.name], `${w.name} has no recipe`).toBeDefined();
+    close(w.inv, investmentFor(RECIPE_KEY.vanilla[w.name], 'damage'));
+    close(w.rinv, investmentFor(RECIPE_KEY.vanilla[w.name], 'reach'));
+  }
+  // spot-check against turretingredients.lua: chaingun ammo 0.4, laser head 0.1 + compressor 0.3
+  close(by('Chaingun').inv, 1.4);
+  close(by('Chaingun').rinv, 1.4);
+  close(by('Laser').inv, 1.4);
+  close(by('Laser').rinv, 2.0);
+  close(by('Railgun').inv, 1.6);
+
   for (const n of ['Laser', 'Railgun', 'Lightning Gun', 'Tesla Gun', 'Mining Laser']) {
     expect(by(n).vel, `${n} should be a beam`).toBeNull();
   }
