@@ -7,7 +7,7 @@ Calculate and compare your turrets for the optimal firing solution!
 ```sh
 bun install
 bun run dev      # http://localhost:5173
-bun run check    # the verification suite — 92 tests, ~2s
+bun run check    # the verification suite — 97 tests, ~2s
 bun run build    # -> dist/
 bun run preview
 ```
@@ -122,6 +122,13 @@ budget are trimmed and reported rather than silently dropped.
 
 The turret card and the loadout solver both show what it costs to actually build the thing:
 credits, the 20% creation tax, and the bill of goods. Tick **Own faction** to waive the tax.
+
+Every cost block has a **Copy** button that puts the bill on the clipboard as plain tab-separated
+text — one heading line, then two columns (amount ⇥ item) covering the goods and the money rows, in
+raw integers with no currency signs or locale separators, so it pastes into Excel as numbers and
+still reads fine in chat. The solver's comp copy lists the **merged goods only**, not the turret
+composition. Warnings (tech cap, missing recipes) append as plain lines. The format is pinned by
+`test/copy.test.js`.
 
 The card's cost block has a **Quantity** field — set it to cost up however many of that turret you
 plan to build. Credits, tax, goods value and every line of the bill of materials scale with it, and a
@@ -274,7 +281,7 @@ sampling distance.
 
 ## Verification
 
-`bun run check` runs `test/`, 92 tests in about a second:
+`bun run check` runs `test/`, 97 tests in about a second:
 
 | File | What it pins |
 | --- | --- |
@@ -285,6 +292,7 @@ sampling distance.
 | `solver-constraints.test.js` | Excluding a turret from the candidate list, guaranteed reservations, multiple reservations sharing the budget, over-large reservations being trimmed and reported, and exclude beating reserve. |
 | `inventory.test.js` | The blueprint default and finite limits, stat overrides, independent duplicate registrations, orphaned entries, corrupt-store recovery, the solver respecting a limit, and the mixed pool — replacing only the registered type, keeping estimates unbounded, and carrying overrides through to the solve. |
 | `factory.test.js` | Costing: every turret resolves to a recipe, the credits/tax formulas, rarity scaling the goods bill, a real in-game APCR goods bill reproduced exactly, loadout rollups merging goods correctly, and the eight HET investment disagreements. |
+| `copy.test.js` | The cost blocks' clipboard text: exact two-column output for a single-turret bill, the own-faction tax row, warning lines, and a real comp bill staying tab-separated ASCII with unformatted integers. |
 
 `test/reference.js` lifts the original functions straight out of `reference/het-turret-lab.html` by
 line range and asserts those ranges still bracket what it expects — so if that file is ever edited,

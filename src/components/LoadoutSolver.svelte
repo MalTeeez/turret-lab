@@ -9,8 +9,8 @@
   } from '../lib/state.svelte.js';
   import { materialiseAll, mixedPool, orphaned } from '../lib/inventory.js';
   import {
-    BAND_PRESETS, SRAT_LEAN, bandSet, distOf, presetWeights, resampleWeights, sratFromPos,
-    sratLabel, sratToPos, targetHP,
+    BAND_PRESETS, NAMES, RARITY_NAME, SRAT_LEAN, bandSet, distOf, presetWeights, resampleWeights,
+    sratFromPos, sratLabel, sratToPos, targetHP,
   } from '../lib/model.js';
   import { LEGACY_VANILLA } from '../lib/roster.js';
   import { solveLoadout } from '../lib/solver.js';
@@ -362,6 +362,7 @@
         tech={sim.tech}
         ownFaction={opt.ownFaction}
         unpriced={cost?.unpriced ?? []}
+        copyHeading={`Loadout comp (tech ${sim.tech}, ${RARITY_NAME[sim.rarity]}, ${NAMES[sim.mat]})`}
       />
     </div>
   {/if}

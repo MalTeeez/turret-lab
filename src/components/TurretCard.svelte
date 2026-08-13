@@ -452,6 +452,7 @@
         tech={sim.tech}
         ownFaction={opt.ownFaction}
         onqty={(v) => (card.qty = v)}
+        copyHeading={`${selected.name}${qty > 1 ? ` x${qty}` : ''} (tech ${sim.tech}, ${RARITY_NAME[sim.rarity]}, ${NAMES[sim.mat]})`}
       />
     </div>
   {/if}

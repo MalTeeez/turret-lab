@@ -6,14 +6,30 @@
    * comp, so `cost` may carry either a per-turret `rows` list or a merged `goods` list.
    */
   import { FACTORY_NOTES } from '../lib/factory.js';
-  import { n0 } from '../lib/format.js';
+  import { costClipboard, n0 } from '../lib/format.js';
 
   let {
     cost, label = 'Manufacturing cost', tech, ownFaction, unpriced = [],
-    qty = null, unitTotal = null, techCapped = false, onqty = null,
+    qty = null, unitTotal = null, techCapped = false, onqty = null, copyHeading = null,
   } = $props();
 
   const money = (v) => '¢' + n0(v);
+
+  let copied = $state(false);
+  let copyTimer;
+  const copy = () => {
+    const text = costClipboard(cost, {
+      heading: copyHeading,
+      ownFaction: !!ownFaction,
+      techCapped: !!(techCapped || cost.techCapped),
+      unpriced,
+    });
+    navigator.clipboard?.writeText(text).then(() => {
+      copied = true;
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => (copied = false), 1500);
+    });
+  };
 </script>
 
 {#if cost}
@@ -32,7 +48,17 @@
         </label>
       {/if}
 
-      <span class="font-semibold text-warn">{money(cost.total)}</span>
+      <span class="flex items-center gap-2">
+        {#if copyHeading}
+          <button
+            type="button"
+            class="hud-btn px-2 py-0.5"
+            title="Copy this bill as tab-separated text — pastes into Excel as amount / item columns"
+            onclick={copy}
+          >{copied ? 'Copied' : 'Copy'}</button>
+        {/if}
+        <span class="font-semibold text-warn">{money(cost.total)}</span>
+      </span>
     </div>
 
     <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
